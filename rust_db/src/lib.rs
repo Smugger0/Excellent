@@ -1,121 +1,113 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use pyo3::exceptions::PyRuntimeError;
-use sqlx::{SqlitePool, Row};
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteConnectOptions};
+use sqlx::Row;
 use std::sync::Arc;
-use std::path::PathBuf;
 use tokio::sync::RwLock;
-use chrono::Utc;
+use tokio::runtime::Runtime;
+use chrono::{Utc, NaiveDate};
+use std::str::FromStr;
+use std::fs;
+use std::path::Path;
 
-// Database struct - 6 ayrı SQLite pool
+// Helper functions for date conversion
+fn to_iso_date(date: &str) -> String {
+    if let Ok(d) = NaiveDate::parse_from_str(date, "%d.%m.%Y") {
+        d.format("%Y-%m-%d").to_string()
+    } else {
+        date.to_string()
+    }
+}
+
+fn to_display_date(date: &str) -> String {
+    if let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+        d.format("%d.%m.%Y").to_string()
+    } else {
+        date.to_string()
+    }
+}
+
 #[pyclass]
 struct Database {
-    runtime: Arc<tokio::runtime::Runtime>,
-    gelir_pool: Arc<RwLock<Option<SqlitePool>>>,
-    gider_pool: Arc<RwLock<Option<SqlitePool>>>,
-    genel_gider_pool: Arc<RwLock<Option<SqlitePool>>>,
+    invoices_pool: Arc<RwLock<Option<SqlitePool>>>,
     settings_pool: Arc<RwLock<Option<SqlitePool>>>,
-    exchange_rates_pool: Arc<RwLock<Option<SqlitePool>>>,
     history_pool: Arc<RwLock<Option<SqlitePool>>>,
-    db_dir: String,
+    runtime: Runtime,
 }
 
 #[pymethods]
 impl Database {
     #[new]
-    fn new() -> PyResult<Self> {
-        let db_dir = std::env::current_dir()
-            .map_err(|e| PyRuntimeError::new_err(format!("Cannot get current dir: {}", e)))?
-            .join("Database")
-            .to_string_lossy()
-            .to_string();
-        
-        std::fs::create_dir_all(&db_dir)
-            .map_err(|e| PyRuntimeError::new_err(format!("Cannot create db dir: {}", e)))?;
-        
-        let runtime = tokio::runtime::Runtime::new()
-            .map_err(|e| PyRuntimeError::new_err(format!("Cannot create tokio runtime: {}", e)))?;
-        
-        Ok(Database {
-            runtime: Arc::new(runtime),
-            gelir_pool: Arc::new(RwLock::new(None)),
-            gider_pool: Arc::new(RwLock::new(None)),
-            genel_gider_pool: Arc::new(RwLock::new(None)),
+    fn new() -> Self {
+        Database {
+            invoices_pool: Arc::new(RwLock::new(None)),
             settings_pool: Arc::new(RwLock::new(None)),
-            exchange_rates_pool: Arc::new(RwLock::new(None)),
             history_pool: Arc::new(RwLock::new(None)),
-            db_dir,
-        })
+            runtime: Runtime::new().unwrap(),
+        }
     }
 
-    // Bağlantıları başlat - Python'dan sync olarak çağrılır, içerde async çalışır
     fn init_connections(&self) -> PyResult<()> {
-        let db_dir = self.db_dir.clone();
-        let gelir_pool = self.gelir_pool.clone();
-        let gider_pool = self.gider_pool.clone();
-        let genel_gider_pool = self.genel_gider_pool.clone();
+        // Ensure Database directory exists
+        if !Path::new("Database").exists() {
+            fs::create_dir("Database").map_err(|e| PyRuntimeError::new_err(format!("Failed to create Database directory: {}", e)))?;
+        }
+
+        let invoices_pool = self.invoices_pool.clone();
         let settings_pool = self.settings_pool.clone();
-        let exchange_rates_pool = self.exchange_rates_pool.clone();
         let history_pool = self.history_pool.clone();
 
         self.runtime.block_on(async move {
-            let base_path = PathBuf::from(&db_dir);
+            // Invoices DB (Faturalar ve Genel Giderler)
+            let opts = SqliteConnectOptions::from_str("sqlite:Database/invoices.db?mode=rwc")
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse connection string: {}", e)))?
+                .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
             
-            let gelir_path = format!("sqlite://{}?mode=rwc", base_path.join("gelir.db").to_string_lossy());
-            let gelir = SqlitePool::connect(&gelir_path)
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to connect gelir.db: {}", e)))?;
-            
-            let gider_path = format!("sqlite://{}?mode=rwc", base_path.join("gider.db").to_string_lossy());
-            let gider = SqlitePool::connect(&gider_path)
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to connect gider.db: {}", e)))?;
-            
-            let genel_gider_path = format!("sqlite://{}?mode=rwc", base_path.join("genel_gider.db").to_string_lossy());
-            let genel_gider = SqlitePool::connect(&genel_gider_path)
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to connect genel_gider.db: {}", e)))?;
-            
-            let settings_path = format!("sqlite://{}?mode=rwc", base_path.join("settings.db").to_string_lossy());
-            let settings = SqlitePool::connect(&settings_path)
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to connect settings.db: {}", e)))?;
-            
-            let exchange_rates_path = format!("sqlite://{}?mode=rwc", base_path.join("exchange_rates.db").to_string_lossy());
-            let exchange_rates = SqlitePool::connect(&exchange_rates_path)
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to connect exchange_rates.db: {}", e)))?;
-            
-            let history_path = format!("sqlite://{}?mode=rwc", base_path.join("history.db").to_string_lossy());
-            let history = SqlitePool::connect(&history_path)
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to connect history.db: {}", e)))?;
+            let pool = SqlitePoolOptions::new()
+                .max_connections(5)
+                .connect_with(opts).await
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to connect to invoices.db: {}", e)))?;
+            *invoices_pool.write().await = Some(pool);
 
-            *gelir_pool.write().await = Some(gelir);
-            *gider_pool.write().await = Some(gider);
-            *genel_gider_pool.write().await = Some(genel_gider);
-            *settings_pool.write().await = Some(settings);
-            *exchange_rates_pool.write().await = Some(exchange_rates);
-            *history_pool.write().await = Some(history);
+            // Settings DB (Ayarlar ve Döviz Kurları)
+            let opts = SqliteConnectOptions::from_str("sqlite:Database/settings.db?mode=rwc")
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse connection string: {}", e)))?
+                .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
+
+            let pool = SqlitePoolOptions::new()
+                .max_connections(5)
+                .connect_with(opts).await
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to connect to settings.db: {}", e)))?;
+            *settings_pool.write().await = Some(pool);
+
+            // History DB (İşlem Geçmişi)
+            let opts = SqliteConnectOptions::from_str("sqlite:Database/history.db?mode=rwc")
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse connection string: {}", e)))?
+                .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
+
+            let pool = SqlitePoolOptions::new()
+                .max_connections(5)
+                .connect_with(opts).await
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to connect to history.db: {}", e)))?;
+            *history_pool.write().await = Some(pool);
 
             Ok(())
         })
     }
 
     fn create_tables(&self) -> PyResult<()> {
-        let gelir_pool = self.gelir_pool.clone();
-        let gider_pool = self.gider_pool.clone();
-        let genel_gider_pool = self.genel_gider_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         let settings_pool = self.settings_pool.clone();
-        let exchange_rates_pool = self.exchange_rates_pool.clone();
         let history_pool = self.history_pool.clone();
 
         self.runtime.block_on(async move {
-            // GELIR DATABASE
-            if let Some(pool) = gelir_pool.read().await.as_ref() {
+            // INVOICES DB TABLES
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                // Income Invoices (Gelir Faturaları)
                 sqlx::query(
                     r#"
-                    CREATE TABLE IF NOT EXISTS invoices (
+                    CREATE TABLE IF NOT EXISTS income_invoices (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         fatura_no TEXT,
                         irsaliye_no TEXT,
@@ -139,14 +131,12 @@ impl Database {
                 )
                 .execute(pool)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create gelir table: {}", e)))?;
-            }
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create income_invoices table: {}", e)))?;
 
-            // GIDER DATABASE
-            if let Some(pool) = gider_pool.read().await.as_ref() {
+                // Expense Invoices (Gider Faturaları)
                 sqlx::query(
                     r#"
-                    CREATE TABLE IF NOT EXISTS invoices (
+                    CREATE TABLE IF NOT EXISTS expense_invoices (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         fatura_no TEXT,
                         irsaliye_no TEXT,
@@ -170,11 +160,9 @@ impl Database {
                 )
                 .execute(pool)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create gider table: {}", e)))?;
-            }
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create expense_invoices table: {}", e)))?;
 
-            // GENEL GIDER DATABASE
-            if let Some(pool) = genel_gider_pool.read().await.as_ref() {
+                // General Expenses
                 sqlx::query(
                     r#"
                     CREATE TABLE IF NOT EXISTS general_expenses (
@@ -199,6 +187,7 @@ impl Database {
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to create general_expenses: {}", e)))?;
 
+                // Corporate Tax
                 sqlx::query(
                     r#"
                     CREATE TABLE IF NOT EXISTS corporate_tax (
@@ -224,7 +213,7 @@ impl Database {
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to create corporate_tax: {}", e)))?;
             }
 
-            // SETTINGS DATABASE
+            // SETTINGS DB TABLES
             if let Some(pool) = settings_pool.read().await.as_ref() {
                 sqlx::query(
                     r#"
@@ -237,10 +226,7 @@ impl Database {
                 .execute(pool)
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to create settings: {}", e)))?;
-            }
 
-            // EXCHANGE RATES DATABASE
-            if let Some(pool) = exchange_rates_pool.read().await.as_ref() {
                 sqlx::query(
                     r#"
                     CREATE TABLE IF NOT EXISTS exchange_rates (
@@ -255,7 +241,7 @@ impl Database {
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to create exchange_rates: {}", e)))?;
             }
 
-            // HISTORY DATABASE
+            // HISTORY DB TABLES
             if let Some(pool) = history_pool.read().await.as_ref() {
                 sqlx::query(
                     r#"
@@ -278,12 +264,14 @@ impl Database {
 
     // ===== GELİR INVOICE METHODS =====
     
-    fn add_gelir_invoice(&self, data: &PyDict) -> PyResult<i64> {
-        let gelir_pool = self.gelir_pool.clone();
+    fn add_gelir_invoice(&self, data: &Bound<'_, PyDict>) -> PyResult<i64> {
+        let invoices_pool = self.invoices_pool.clone();
         
         // Python dict'ten değerleri al
         let fatura_no: Option<String> = data.get_item("fatura_no")?.and_then(|v| v.extract().ok());
-        let tarih: Option<String> = data.get_item("tarih")?.and_then(|v| v.extract().ok());
+        let tarih_raw: Option<String> = data.get_item("tarih")?.and_then(|v| v.extract().ok());
+        let tarih = tarih_raw.map(|t| to_iso_date(&t)); // Convert to ISO
+        
         let firma: Option<String> = data.get_item("firma")?.and_then(|v| v.extract().ok());
         let malzeme: Option<String> = data.get_item("malzeme")?.and_then(|v| v.extract().ok());
         let miktar: Option<String> = data.get_item("miktar")?.and_then(|v| v.extract().ok());
@@ -298,12 +286,12 @@ impl Database {
         let eur_rate: Option<f64> = data.get_item("eur_rate")?.and_then(|v| v.extract().ok());
 
         self.runtime.block_on(async move {
-            if let Some(pool) = gelir_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 let created_at = Utc::now().to_rfc3339();
                 
                 let result = sqlx::query(
                     r#"
-                    INSERT INTO invoices (fatura_no, tarih, firma, malzeme, miktar, toplam_tutar_tl, 
+                    INSERT INTO income_invoices (fatura_no, tarih, firma, malzeme, miktar, toplam_tutar_tl, 
                                         toplam_tutar_usd, toplam_tutar_eur, birim, kdv_yuzdesi, kdv_tutari, 
                                         kdv_dahil, usd_rate, eur_rate, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -335,10 +323,12 @@ impl Database {
         })
     }
 
-    fn update_gelir_invoice(&self, invoice_id: i64, data: &PyDict) -> PyResult<bool> {
-        let gelir_pool = self.gelir_pool.clone();
+    fn update_gelir_invoice(&self, invoice_id: i64, data: &Bound<'_, PyDict>) -> PyResult<bool> {
+        let invoices_pool = self.invoices_pool.clone();
         
-        let tarih: Option<String> = data.get_item("tarih")?.and_then(|v| v.extract().ok());
+        let tarih_raw: Option<String> = data.get_item("tarih")?.and_then(|v| v.extract().ok());
+        let tarih = tarih_raw.map(|t| to_iso_date(&t)); // Convert to ISO
+
         let firma: Option<String> = data.get_item("firma")?.and_then(|v| v.extract().ok());
         let malzeme: Option<String> = data.get_item("malzeme")?.and_then(|v| v.extract().ok());
         let miktar: Option<String> = data.get_item("miktar")?.and_then(|v| v.extract().ok());
@@ -353,12 +343,12 @@ impl Database {
         let eur_rate: Option<f64> = data.get_item("eur_rate")?.and_then(|v| v.extract().ok());
 
         self.runtime.block_on(async move {
-            if let Some(pool) = gelir_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 let updated_at = Utc::now().to_rfc3339();
                 
                 let result = sqlx::query(
                     r#"
-                    UPDATE invoices SET
+                    UPDATE income_invoices SET
                     tarih = ?, firma = ?, malzeme = ?, miktar = ?, 
                     toplam_tutar_tl = ?, toplam_tutar_usd = ?, toplam_tutar_eur = ?, birim = ?, 
                     kdv_yuzdesi = ?, kdv_tutari = ?, kdv_dahil = ?, usd_rate = ?, eur_rate = ?, updated_at = ?
@@ -392,11 +382,11 @@ impl Database {
     }
 
     fn delete_gelir_invoice(&self, invoice_id: i64) -> PyResult<i64> {
-        let gelir_pool = self.gelir_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         self.runtime.block_on(async move {
-            if let Some(pool) = gelir_pool.read().await.as_ref() {
-                let result = sqlx::query("DELETE FROM invoices WHERE id = ?")
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                let result = sqlx::query("DELETE FROM income_invoices WHERE id = ?")
                     .bind(invoice_id)
                     .execute(pool)
                     .await
@@ -410,16 +400,16 @@ impl Database {
     }
 
     fn delete_multiple_gelir_invoices(&self, invoice_ids: Vec<i64>) -> PyResult<i64> {
-        let gelir_pool = self.gelir_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         self.runtime.block_on(async move {
             if invoice_ids.is_empty() {
                 return Ok(0);
             }
 
-            if let Some(pool) = gelir_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 let placeholders = vec!["?"; invoice_ids.len()].join(",");
-                let query = format!("DELETE FROM invoices WHERE id IN ({})", placeholders);
+                let query = format!("DELETE FROM income_invoices WHERE id IN ({})", placeholders);
                 
                 let mut q = sqlx::query(&query);
                 for id in invoice_ids {
@@ -437,18 +427,19 @@ impl Database {
         })
     }
 
-    fn get_all_gelir_invoices(&self, py: Python<'_>, limit: Option<i64>, offset: Option<i64>) -> PyResult<PyObject> {
-        let gelir_pool = self.gelir_pool.clone();
+    fn get_all_gelir_invoices(&self, py: Python<'_>, limit: Option<i64>, offset: Option<i64>, order_by: Option<String>) -> PyResult<PyObject> {
+        let invoices_pool = self.invoices_pool.clone();
         
         let rows = self.runtime.block_on(async move {
-            if let Some(pool) = gelir_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                let order_clause = order_by.unwrap_or_else(|| "tarih DESC".to_string());
                 let query = if let Some(lim) = limit {
                     format!(
-                        "SELECT * FROM invoices ORDER BY substr(tarih, 7, 4) || substr(tarih, 4, 2) || substr(tarih, 1, 2) DESC LIMIT {} OFFSET {}",
-                        lim, offset.unwrap_or(0)
+                        "SELECT * FROM income_invoices ORDER BY {} LIMIT {} OFFSET {}",
+                        order_clause, lim, offset.unwrap_or(0)
                     )
                 } else {
-                    "SELECT * FROM invoices ORDER BY substr(tarih, 7, 4) || substr(tarih, 4, 2) || substr(tarih, 1, 2) DESC".to_string()
+                    format!("SELECT * FROM income_invoices ORDER BY {}", order_clause)
                 };
 
                 sqlx::query(&query)
@@ -465,8 +456,12 @@ impl Database {
             let dict = PyDict::new_bound(py);
             dict.set_item("id", row.get::<i64, _>("id"))?;
             dict.set_item("fatura_no", row.try_get::<String, _>("fatura_no").ok())?;
-            dict.set_item("irsaliye_no", row.try_get::<String, _>("irsaliye_no").ok())?;
-            dict.set_item("tarih", row.try_get::<String, _>("tarih").ok())?;
+            
+            // Convert ISO date back to Display date
+            let tarih_iso = row.try_get::<String, _>("tarih").ok();
+            let tarih_display = tarih_iso.as_ref().map(|t| to_display_date(t));
+            dict.set_item("tarih", tarih_display)?;
+
             dict.set_item("firma", row.try_get::<String, _>("firma").ok())?;
             dict.set_item("malzeme", row.try_get::<String, _>("malzeme").ok())?;
             dict.set_item("miktar", row.try_get::<String, _>("miktar").ok())?;
@@ -487,11 +482,11 @@ impl Database {
     }
 
     fn get_gelir_invoice_count(&self) -> PyResult<i64> {
-        let gelir_pool = self.gelir_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         self.runtime.block_on(async move {
-            if let Some(pool) = gelir_pool.read().await.as_ref() {
-                let row = sqlx::query("SELECT COUNT(*) as count FROM invoices")
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                let row = sqlx::query("SELECT COUNT(*) as count FROM income_invoices")
                     .fetch_one(pool)
                     .await
                     .map_err(|e| PyRuntimeError::new_err(format!("Failed to count gelir invoices: {}", e)))?;
@@ -504,11 +499,11 @@ impl Database {
     }
 
     fn get_gelir_invoice_by_id(&self, py: Python<'_>, invoice_id: i64) -> PyResult<PyObject> {
-        let gelir_pool = self.gelir_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         let row = self.runtime.block_on(async move {
-            if let Some(pool) = gelir_pool.read().await.as_ref() {
-                sqlx::query("SELECT * FROM invoices WHERE id = ?")
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                sqlx::query("SELECT * FROM income_invoices WHERE id = ?")
                     .bind(invoice_id)
                     .fetch_optional(pool)
                     .await
@@ -522,8 +517,11 @@ impl Database {
             let dict = PyDict::new_bound(py);
             dict.set_item("id", r.get::<i64, _>("id"))?;
             dict.set_item("fatura_no", r.try_get::<String, _>("fatura_no").ok())?;
-            dict.set_item("irsaliye_no", r.try_get::<String, _>("irsaliye_no").ok())?;
-            dict.set_item("tarih", r.try_get::<String, _>("tarih").ok())?;
+            
+            let tarih_iso = r.try_get::<String, _>("tarih").ok();
+            let tarih_display = tarih_iso.as_ref().map(|t| to_display_date(t));
+            dict.set_item("tarih", tarih_display)?;
+
             dict.set_item("firma", r.try_get::<String, _>("firma").ok())?;
             dict.set_item("malzeme", r.try_get::<String, _>("malzeme").ok())?;
             dict.set_item("miktar", r.try_get::<String, _>("miktar").ok())?;
@@ -546,12 +544,13 @@ impl Database {
 
     // ===== GİDER INVOICE METHODS =====
     
-    fn add_gider_invoice(&self, data: &PyDict) -> PyResult<i64> {
-        let gider_pool = self.gider_pool.clone();
+    fn add_gider_invoice(&self, data: &Bound<'_, PyDict>) -> PyResult<i64> {
+        let invoices_pool = self.invoices_pool.clone();
         
         let fatura_no: Option<String> = data.get_item("fatura_no")?.and_then(|v| v.extract().ok());
-        let irsaliye_no: Option<String> = data.get_item("irsaliye_no")?.and_then(|v| v.extract().ok());
-        let tarih: Option<String> = data.get_item("tarih")?.and_then(|v| v.extract().ok());
+        let tarih_raw: Option<String> = data.get_item("tarih")?.and_then(|v| v.extract().ok());
+        let tarih = tarih_raw.map(|t| to_iso_date(&t));
+
         let firma: Option<String> = data.get_item("firma")?.and_then(|v| v.extract().ok());
         let malzeme: Option<String> = data.get_item("malzeme")?.and_then(|v| v.extract().ok());
         let miktar: Option<String> = data.get_item("miktar")?.and_then(|v| v.extract().ok());
@@ -566,19 +565,18 @@ impl Database {
         let eur_rate: Option<f64> = data.get_item("eur_rate")?.and_then(|v| v.extract().ok());
 
         self.runtime.block_on(async move {
-            if let Some(pool) = gider_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 let created_at = Utc::now().to_rfc3339();
                 
                 let result = sqlx::query(
                     r#"
-                    INSERT INTO invoices (fatura_no, irsaliye_no, tarih, firma, malzeme, miktar, toplam_tutar_tl, 
+                    INSERT INTO expense_invoices (fatura_no, tarih, firma, malzeme, miktar, toplam_tutar_tl, 
                                         toplam_tutar_usd, toplam_tutar_eur, birim, kdv_yuzdesi, kdv_tutari, 
                                         kdv_dahil, usd_rate, eur_rate, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     "#
                 )
                 .bind(fatura_no)
-                .bind(irsaliye_no)
                 .bind(tarih)
                 .bind(firma)
                 .bind(malzeme)
@@ -604,12 +602,13 @@ impl Database {
         })
     }
 
-    fn update_gider_invoice(&self, invoice_id: i64, data: &PyDict) -> PyResult<bool> {
-        let gider_pool = self.gider_pool.clone();
+    fn update_gider_invoice(&self, invoice_id: i64, data: &Bound<'_, PyDict>) -> PyResult<bool> {
+        let invoices_pool = self.invoices_pool.clone();
         
         let fatura_no: Option<String> = data.get_item("fatura_no")?.and_then(|v| v.extract().ok());
-        let irsaliye_no: Option<String> = data.get_item("irsaliye_no")?.and_then(|v| v.extract().ok());
-        let tarih: Option<String> = data.get_item("tarih")?.and_then(|v| v.extract().ok());
+        let tarih_raw: Option<String> = data.get_item("tarih")?.and_then(|v| v.extract().ok());
+        let tarih = tarih_raw.map(|t| to_iso_date(&t));
+
         let firma: Option<String> = data.get_item("firma")?.and_then(|v| v.extract().ok());
         let malzeme: Option<String> = data.get_item("malzeme")?.and_then(|v| v.extract().ok());
         let miktar: Option<String> = data.get_item("miktar")?.and_then(|v| v.extract().ok());
@@ -624,20 +623,19 @@ impl Database {
         let eur_rate: Option<f64> = data.get_item("eur_rate")?.and_then(|v| v.extract().ok());
 
         self.runtime.block_on(async move {
-            if let Some(pool) = gider_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 let updated_at = Utc::now().to_rfc3339();
                 
                 let result = sqlx::query(
                     r#"
-                    UPDATE invoices SET
-                    fatura_no = ?, irsaliye_no = ?, tarih = ?, firma = ?, malzeme = ?, miktar = ?, 
+                    UPDATE expense_invoices SET
+                    fatura_no = ?, tarih = ?, firma = ?, malzeme = ?, miktar = ?, 
                     toplam_tutar_tl = ?, toplam_tutar_usd = ?, toplam_tutar_eur = ?, birim = ?, 
                     kdv_yuzdesi = ?, kdv_tutari = ?, kdv_dahil = ?, usd_rate = ?, eur_rate = ?, updated_at = ?
                     WHERE id = ?
                     "#
                 )
                 .bind(fatura_no)
-                .bind(irsaliye_no)
                 .bind(tarih)
                 .bind(firma)
                 .bind(malzeme)
@@ -665,11 +663,11 @@ impl Database {
     }
 
     fn delete_gider_invoice(&self, invoice_id: i64) -> PyResult<i64> {
-        let gider_pool = self.gider_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         self.runtime.block_on(async move {
-            if let Some(pool) = gider_pool.read().await.as_ref() {
-                let result = sqlx::query("DELETE FROM invoices WHERE id = ?")
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                let result = sqlx::query("DELETE FROM expense_invoices WHERE id = ?")
                     .bind(invoice_id)
                     .execute(pool)
                     .await
@@ -683,16 +681,16 @@ impl Database {
     }
 
     fn delete_multiple_gider_invoices(&self, invoice_ids: Vec<i64>) -> PyResult<i64> {
-        let gider_pool = self.gider_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         self.runtime.block_on(async move {
             if invoice_ids.is_empty() {
                 return Ok(0);
             }
 
-            if let Some(pool) = gider_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 let placeholders = vec!["?"; invoice_ids.len()].join(",");
-                let query = format!("DELETE FROM invoices WHERE id IN ({})", placeholders);
+                let query = format!("DELETE FROM expense_invoices WHERE id IN ({})", placeholders);
                 
                 let mut q = sqlx::query(&query);
                 for id in invoice_ids {
@@ -710,18 +708,19 @@ impl Database {
         })
     }
 
-    fn get_all_gider_invoices(&self, py: Python<'_>, limit: Option<i64>, offset: Option<i64>) -> PyResult<PyObject> {
-        let gider_pool = self.gider_pool.clone();
+    fn get_all_gider_invoices(&self, py: Python<'_>, limit: Option<i64>, offset: Option<i64>, order_by: Option<String>) -> PyResult<PyObject> {
+        let invoices_pool = self.invoices_pool.clone();
         
         let rows = self.runtime.block_on(async move {
-            if let Some(pool) = gider_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                let order_clause = order_by.unwrap_or_else(|| "tarih DESC".to_string());
                 let query = if let Some(lim) = limit {
                     format!(
-                        "SELECT * FROM invoices ORDER BY substr(tarih, 7, 4) || substr(tarih, 4, 2) || substr(tarih, 1, 2) DESC LIMIT {} OFFSET {}",
-                        lim, offset.unwrap_or(0)
+                        "SELECT * FROM expense_invoices ORDER BY {} LIMIT {} OFFSET {}",
+                        order_clause, lim, offset.unwrap_or(0)
                     )
                 } else {
-                    "SELECT * FROM invoices ORDER BY substr(tarih, 7, 4) || substr(tarih, 4, 2) || substr(tarih, 1, 2) DESC".to_string()
+                    format!("SELECT * FROM expense_invoices ORDER BY {}", order_clause)
                 };
 
                 sqlx::query(&query)
@@ -738,8 +737,11 @@ impl Database {
             let dict = PyDict::new_bound(py);
             dict.set_item("id", row.get::<i64, _>("id"))?;
             dict.set_item("fatura_no", row.try_get::<String, _>("fatura_no").ok())?;
-            dict.set_item("irsaliye_no", row.try_get::<String, _>("irsaliye_no").ok())?;
-            dict.set_item("tarih", row.try_get::<String, _>("tarih").ok())?;
+            
+            let tarih_iso = row.try_get::<String, _>("tarih").ok();
+            let tarih_display = tarih_iso.as_ref().map(|t| to_display_date(t));
+            dict.set_item("tarih", tarih_display)?;
+
             dict.set_item("firma", row.try_get::<String, _>("firma").ok())?;
             dict.set_item("malzeme", row.try_get::<String, _>("malzeme").ok())?;
             dict.set_item("miktar", row.try_get::<String, _>("miktar").ok())?;
@@ -760,11 +762,11 @@ impl Database {
     }
 
     fn get_gider_invoice_count(&self) -> PyResult<i64> {
-        let gider_pool = self.gider_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         self.runtime.block_on(async move {
-            if let Some(pool) = gider_pool.read().await.as_ref() {
-                let row = sqlx::query("SELECT COUNT(*) as count FROM invoices")
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                let row = sqlx::query("SELECT COUNT(*) as count FROM expense_invoices")
                     .fetch_one(pool)
                     .await
                     .map_err(|e| PyRuntimeError::new_err(format!("Failed to count gider invoices: {}", e)))?;
@@ -777,11 +779,11 @@ impl Database {
     }
 
     fn get_gider_invoice_by_id(&self, py: Python<'_>, invoice_id: i64) -> PyResult<PyObject> {
-        let gider_pool = self.gider_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         let row = self.runtime.block_on(async move {
-            if let Some(pool) = gider_pool.read().await.as_ref() {
-                sqlx::query("SELECT * FROM invoices WHERE id = ?")
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                sqlx::query("SELECT * FROM expense_invoices WHERE id = ?")
                     .bind(invoice_id)
                     .fetch_optional(pool)
                     .await
@@ -795,8 +797,11 @@ impl Database {
             let dict = PyDict::new_bound(py);
             dict.set_item("id", r.get::<i64, _>("id"))?;
             dict.set_item("fatura_no", r.try_get::<String, _>("fatura_no").ok())?;
-            dict.set_item("irsaliye_no", r.try_get::<String, _>("irsaliye_no").ok())?;
-            dict.set_item("tarih", r.try_get::<String, _>("tarih").ok())?;
+            
+            let tarih_iso = r.try_get::<String, _>("tarih").ok();
+            let tarih_display = tarih_iso.as_ref().map(|t| to_display_date(t));
+            dict.set_item("tarih", tarih_display)?;
+
             dict.set_item("firma", r.try_get::<String, _>("firma").ok())?;
             dict.set_item("malzeme", r.try_get::<String, _>("malzeme").ok())?;
             dict.set_item("miktar", r.try_get::<String, _>("miktar").ok())?;
@@ -887,10 +892,10 @@ impl Database {
     // ===== EXCHANGE RATES METHODS =====
     
     fn save_exchange_rates(&self, usd_rate: f64, eur_rate: f64) -> PyResult<()> {
-        let exchange_rates_pool = self.exchange_rates_pool.clone();
+        let settings_pool = self.settings_pool.clone();
         
         self.runtime.block_on(async move {
-            if let Some(pool) = exchange_rates_pool.read().await.as_ref() {
+            if let Some(pool) = settings_pool.read().await.as_ref() {
                 let date = Utc::now().format("%Y-%m-%d").to_string();
                 
                 sqlx::query(
@@ -914,10 +919,10 @@ impl Database {
     }
 
     fn load_exchange_rates(&self) -> PyResult<(f64, f64)> {
-        let exchange_rates_pool = self.exchange_rates_pool.clone();
+        let settings_pool = self.settings_pool.clone();
         
         self.runtime.block_on(async move {
-            if let Some(pool) = exchange_rates_pool.read().await.as_ref() {
+            if let Some(pool) = settings_pool.read().await.as_ref() {
                 let date = Utc::now().format("%Y-%m-%d").to_string();
                 
                 let row = sqlx::query("SELECT usd_rate, eur_rate FROM exchange_rates WHERE date = ?")
@@ -1045,8 +1050,8 @@ impl Database {
 
     // ===== YEARLY EXPENSES METHODS =====
     
-    fn add_or_update_yearly_expenses(&self, year: i64, py: Python<'_>, monthly_data: &PyDict) -> PyResult<i64> {
-        let genel_gider_pool = self.genel_gider_pool.clone();
+    fn add_or_update_yearly_expenses(&self, year: i64, _py: Python<'_>, monthly_data: &Bound<'_, PyDict>) -> PyResult<i64> {
+        let invoices_pool = self.invoices_pool.clone();
         
         // Extract monthly data
         let months = vec!["ocak", "subat", "mart", "nisan", "mayis", "haziran",
@@ -1061,7 +1066,7 @@ impl Database {
         }
         
         self.runtime.block_on(async move {
-            if let Some(pool) = genel_gider_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 // Check if year exists
                 let check = sqlx::query("SELECT id FROM general_expenses WHERE yil = ?")
                     .bind(year)
@@ -1132,10 +1137,10 @@ impl Database {
     }
 
     fn get_yearly_expenses(&self, py: Python<'_>, year: i64) -> PyResult<PyObject> {
-        let genel_gider_pool = self.genel_gider_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         let row = self.runtime.block_on(async move {
-            if let Some(pool) = genel_gider_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 sqlx::query("SELECT * FROM general_expenses WHERE yil = ?")
                     .bind(year)
                     .fetch_optional(pool)
@@ -1168,11 +1173,65 @@ impl Database {
         }
     }
 
+    fn get_yearly_expenses_by_id(&self, py: Python<'_>, id: i64) -> PyResult<PyObject> {
+        let invoices_pool = self.invoices_pool.clone();
+        
+        let row = self.runtime.block_on(async move {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                sqlx::query("SELECT * FROM general_expenses WHERE id = ?")
+                    .bind(id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(|e| PyRuntimeError::new_err(format!("Failed to get yearly expenses by id: {}", e)))
+            } else {
+                Err(PyRuntimeError::new_err("Database not initialized"))
+            }
+        })?;
+
+        if let Some(r) = row {
+            let dict = PyDict::new_bound(py);
+            dict.set_item("id", r.get::<i64, _>("id"))?;
+            dict.set_item("yil", r.get::<i64, _>("yil"))?;
+            dict.set_item("ocak", r.get::<f64, _>("ocak"))?;
+            dict.set_item("subat", r.get::<f64, _>("subat"))?;
+            dict.set_item("mart", r.get::<f64, _>("mart"))?;
+            dict.set_item("nisan", r.get::<f64, _>("nisan"))?;
+            dict.set_item("mayis", r.get::<f64, _>("mayis"))?;
+            dict.set_item("haziran", r.get::<f64, _>("haziran"))?;
+            dict.set_item("temmuz", r.get::<f64, _>("temmuz"))?;
+            dict.set_item("agustos", r.get::<f64, _>("agustos"))?;
+            dict.set_item("eylul", r.get::<f64, _>("eylul"))?;
+            dict.set_item("ekim", r.get::<f64, _>("ekim"))?;
+            dict.set_item("kasim", r.get::<f64, _>("kasim"))?;
+            dict.set_item("aralik", r.get::<f64, _>("aralik"))?;
+            Ok(dict.into())
+        } else {
+            Ok(py.None())
+        }
+    }
+
+    fn get_yearly_expenses_count(&self) -> PyResult<i64> {
+        let invoices_pool = self.invoices_pool.clone();
+        
+        self.runtime.block_on(async move {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
+                let row = sqlx::query("SELECT COUNT(*) as count FROM general_expenses")
+                    .fetch_one(pool)
+                    .await
+                    .map_err(|e| PyRuntimeError::new_err(format!("Failed to count yearly expenses: {}", e)))?;
+
+                Ok(row.get::<i64, _>("count"))
+            } else {
+                Err(PyRuntimeError::new_err("Database not initialized"))
+            }
+        })
+    }
+
     fn get_all_yearly_expenses(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let genel_gider_pool = self.genel_gider_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         let rows = self.runtime.block_on(async move {
-            if let Some(pool) = genel_gider_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 sqlx::query("SELECT * FROM general_expenses ORDER BY yil DESC")
                     .fetch_all(pool)
                     .await
@@ -1206,8 +1265,8 @@ impl Database {
 
     // ===== CORPORATE TAX METHODS =====
     
-    fn add_or_update_corporate_tax(&self, year: i64, py: Python<'_>, monthly_data: &PyDict) -> PyResult<i64> {
-        let genel_gider_pool = self.genel_gider_pool.clone();
+    fn add_or_update_corporate_tax(&self, year: i64, _py: Python<'_>, monthly_data: &Bound<'_, PyDict>) -> PyResult<i64> {
+        let invoices_pool = self.invoices_pool.clone();
         
         // Extract monthly data
         let months = vec!["ocak", "subat", "mart", "nisan", "mayis", "haziran",
@@ -1222,7 +1281,7 @@ impl Database {
         }
         
         self.runtime.block_on(async move {
-            if let Some(pool) = genel_gider_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 // Check if year exists
                 let check = sqlx::query("SELECT id FROM corporate_tax WHERE yil = ?")
                     .bind(year)
@@ -1293,10 +1352,10 @@ impl Database {
     }
 
     fn get_corporate_tax(&self, py: Python<'_>, year: i64) -> PyResult<PyObject> {
-        let genel_gider_pool = self.genel_gider_pool.clone();
+        let invoices_pool = self.invoices_pool.clone();
         
         let row = self.runtime.block_on(async move {
-            if let Some(pool) = genel_gider_pool.read().await.as_ref() {
+            if let Some(pool) = invoices_pool.read().await.as_ref() {
                 sqlx::query("SELECT * FROM corporate_tax WHERE yil = ?")
                     .bind(year)
                     .fetch_optional(pool)
@@ -1331,7 +1390,7 @@ impl Database {
 }
 
 #[pymodule]
-fn rust_db(_py: Python, m: &PyModule) -> PyResult<()> {
+fn rust_db(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Database>()?;
     Ok(())
 }

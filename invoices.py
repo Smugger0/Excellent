@@ -192,10 +192,17 @@ class InvoiceProcessor:
             manual_usd_rate = invoice_data.get('manual_usd_rate', None)
             manual_eur_rate = invoice_data.get('manual_eur_rate', None)
             
+            # Toplu işlemden gelen kur bilgisi (Tarihli kur)
+            bulk_exchange_rates = invoice_data.get('exchange_rates', {})
+            
             if manual_usd_rate and manual_usd_rate > 0:
                 # Manuel USD kuru girilmiş (1 USD = ? TL formatında)
                 usd_to_tl = manual_usd_rate
                 logging.debug(f"   💱 Manuel USD kuru kullanılıyor: 1 USD = {usd_to_tl} TL")
+            elif bulk_exchange_rates and 'USD' in bulk_exchange_rates:
+                # Toplu işlemden gelen kur
+                usd_to_tl = bulk_exchange_rates.get('USD', 0)
+                logging.debug(f"   💱 Tarihli USD kuru kullanılıyor: 1 USD = {usd_to_tl} TL")
             else:
                 # TCMB kurunu kullan (cache'den)
                 current_rates = self.backend.exchange_rates
@@ -207,6 +214,10 @@ class InvoiceProcessor:
                 # Manuel EUR kuru girilmiş (1 EUR = ? TL formatında)
                 eur_to_tl = manual_eur_rate
                 logging.debug(f"   💱 Manuel EUR kuru kullanılıyor: 1 EUR = {eur_to_tl} TL")
+            elif bulk_exchange_rates and 'EUR' in bulk_exchange_rates:
+                # Toplu işlemden gelen kur
+                eur_to_tl = bulk_exchange_rates.get('EUR', 0)
+                logging.debug(f"   💱 Tarihli EUR kuru kullanılıyor: 1 EUR = {eur_to_tl} TL")
             else:
                 # TCMB kurunu kullan (cache'den)
                 current_rates = self.backend.exchange_rates
@@ -435,9 +446,9 @@ class InvoiceManager:
         
         elif operation == 'get':
             if invoice_type == 'outgoing':
-                return self.backend.db.get_all_gelir_invoices(limit, offset)
+                return self.backend.db.get_all_gelir_invoices(limit, offset, order_by)
             elif invoice_type == 'incoming':
-                return self.backend.db.get_all_gider_invoices(limit, offset)
+                return self.backend.db.get_all_gider_invoices(limit, offset, order_by)
             else:
                 return []
         
@@ -464,13 +475,13 @@ class InvoiceManager:
         """Genel gider işlemleri için özel metod - ayrı veritabanı ile."""
         
         if operation == 'get':
-            return self.backend.db.get_all_genel_gider(limit=limit, offset=offset)
+            return self.backend.db.get_all_yearly_expenses()
         
         elif operation == 'count':
-            return self.backend.db.get_genel_gider_count()
+            return self.backend.db.get_yearly_expenses_count()
         
         elif operation == 'get_by_id':
-            return self.backend.db.get_genel_gider_by_id(record_id)
+            return self.backend.db.get_yearly_expenses_by_id(record_id)
         
         return None
 
@@ -550,13 +561,13 @@ class PeriodicIncomeCalculator:
         """Gelir, gider ve kar/zarar özetini hesaplar - Rust async DB ile."""
         try:
             # Tüm gelirleri al
-            gelir_invoices = self.backend.db.get_all_gelir_invoices(None, None) or []
+            gelir_invoices = self.backend.db.get_all_gelir_invoices(None, None, None) or []
             total_revenue_kdv_dahil = sum(inv.get('toplam_tutar_tl', 0) or 0 for inv in gelir_invoices)
             total_revenue_kdv = sum(inv.get('kdv_tutari', 0) or 0 for inv in gelir_invoices)
             total_revenue = total_revenue_kdv_dahil - total_revenue_kdv  # Matrah (KDV hariç)
             
             # Tüm giderleri al
-            gider_invoices = self.backend.db.get_all_gider_invoices(None, None) or []
+            gider_invoices = self.backend.db.get_all_gider_invoices(None, None, None) or []
             invoice_expenses_kdv_dahil = sum(inv.get('toplam_tutar_tl', 0) or 0 for inv in gider_invoices)
             invoice_expenses_kdv = sum(inv.get('kdv_tutari', 0) or 0 for inv in gider_invoices)
             invoice_expenses = invoice_expenses_kdv_dahil - invoice_expenses_kdv  # Matrah (KDV hariç)
@@ -646,7 +657,7 @@ class PeriodicIncomeCalculator:
         
         try:
             # Gelir veritabanından yılları al
-            gelir_invoices = self.backend.db.get_all_gelir_invoices(None, None) or []
+            gelir_invoices = self.backend.db.get_all_gelir_invoices(None, None, None) or []
             for inv in gelir_invoices:
                 try:
                     if 'tarih' in inv and inv['tarih']:
@@ -656,7 +667,7 @@ class PeriodicIncomeCalculator:
                     continue
             
             # Gider veritabanından yılları al
-            gider_invoices = self.backend.db.get_all_gider_invoices(None, None) or []
+            gider_invoices = self.backend.db.get_all_gider_invoices(None, None, None) or []
             for inv in gider_invoices:
                 try:
                     if 'tarih' in inv and inv['tarih']:
@@ -685,8 +696,8 @@ class PeriodicIncomeCalculator:
         tax_rate = float(tax_rate_raw) / 100.0
         
         # Tüm faturaları al
-        gelir_invoices = self.backend.db.get_all_gelir_invoices(None, None) or []
-        gider_invoices = self.backend.db.get_all_gider_invoices(None, None) or []
+        gelir_invoices = self.backend.db.get_all_gelir_invoices(None, None, None) or []
+        gider_invoices = self.backend.db.get_all_gider_invoices(None, None, None) or []
         yearly_expenses = self.backend.db.get_yearly_expenses(year)
         
         monthly_results = []
@@ -771,8 +782,8 @@ class PeriodicIncomeCalculator:
         """Belirli bir yıl için yıllık özet - Rust async DB ile."""
         
         # Tüm faturaları al
-        gelir_invoices = self.backend.db.get_all_gelir_invoices(None, None) or []
-        gider_invoices = self.backend.db.get_all_gider_invoices(None, None) or []
+        gelir_invoices = self.backend.db.get_all_gelir_invoices(None, None, None) or []
+        gider_invoices = self.backend.db.get_all_gider_invoices(None, None, None) or []
         yearly_expenses = self.backend.db.get_yearly_expenses(year)
         
         # Gelir hesapla (KDV dahil tutardan matrahı çıkar)

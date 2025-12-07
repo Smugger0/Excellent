@@ -313,7 +313,8 @@ class Backend:
 
     def get_history_by_date_range(self, start_date, end_date, limit=100):
         """Tarih aralığına göre işlem geçmişini getirir."""
-        return self.db.get_history_by_date_range(start_date, end_date, limit)
+        # Rust tarafı limit parametresini kabul etmiyor, sadece tarih aralığı gönderiyoruz
+        return self.db.get_history_by_date_range(start_date, end_date)
 
     def clear_old_history(self, days_to_keep=90):
         """Eski geçmiş kayıtlarını temizler."""
@@ -531,3 +532,42 @@ class Backend:
         except Exception as e:
             print(f"❌ fetch_historical_rates genel hatası: {e}")
             return None
+    
+    def fetch_bulk_historical_rates(self, date_list):
+        """
+        Birden fazla tarih için paralel olarak döviz kurlarını çeker.
+        Her benzersiz tarih için sadece bir kez TCMB'ye istek gönderilir.
+        
+        Args:
+            date_list: 'DD.MM.YYYY' formatında tarih listesi
+            
+        Returns:
+            dict: {date_str: {'USD': rate, 'EUR': rate}}
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        if not date_list:
+            return {}
+        
+        # Benzersiz tarihleri al
+        unique_dates = list(set(date_list))
+        rates_cache = {}
+        
+        def fetch_single_rate(date_str):
+            try:
+                rates = self.fetch_historical_rates(date_str)
+                return (date_str, rates)
+            except Exception as e:
+                logging.error(f"Kur çekme hatası ({date_str}): {e}")
+                return (date_str, None)
+        
+        # Paralel olarak kur bilgilerini çek
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(fetch_single_rate, date): date for date in unique_dates}
+            
+            for future in as_completed(futures):
+                date_str, rates = future.result()
+                if rates:
+                    rates_cache[date_str] = rates
+        
+        return rates_cache

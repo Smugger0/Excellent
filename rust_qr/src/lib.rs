@@ -23,39 +23,49 @@ fn scan_helper(img: &DynamicImage) -> Option<String> {
     scan_helper_raw(width, height, raw_pixels)
 }
 
+/// Raw Luma verisinden belirtilen alanı kesip yeni bir vektör döndürür
+fn crop_luma_raw(data: &[u8], width: u32, x: u32, y: u32, w: u32, h: u32) -> Vec<u8> {
+    let mut cropped = Vec::with_capacity((w * h) as usize);
+    for row in 0..h {
+        let src_y = y + row;
+        let src_start = (src_y * width + x) as usize;
+        let src_end = src_start + w as usize;
+        
+        if src_end <= data.len() {
+            cropped.extend_from_slice(&data[src_start..src_end]);
+        }
+    }
+    cropped
+}
+
 /// Ham Luma (Gri Tonlama) verisini alıp QR arar (Performans için)
 #[pyfunction]
 fn scan_raw_luma(data: &[u8], width: u32, height: u32) -> PyResult<Option<String>> {
-    // 1. Try raw scan first (fastest)
-    let raw_pixels = data.to_vec();
-    if let Some(qr) = scan_helper_raw(width, height, raw_pixels.clone()) {
+    // --- AŞAMA 1: Tam Resim (Raw Scan) ---
+    // En hızlı ve güvenilir yöntem. Önce bunu deniyoruz.
+    if let Some(qr) = scan_helper_raw(width, height, data.to_vec()) {
          return Ok(Some(qr));
     }
 
-    // 2. Convert to DynamicImage for advanced ops (Retry Logic)
-    let img_buffer = match image::ImageBuffer::<image::Luma<u8>, _>::from_raw(width, height, raw_pixels) {
-        Some(buf) => buf,
-        None => return Ok(None),
-    };
-    let img = DynamicImage::ImageLuma8(img_buffer);
-
-    // --- AŞAMA 2: Sağ Üst Köşe (Top-Right Crop) ---
+    // --- AŞAMA 2: Sağ Üst Köşe + Kontrast (Fallback) ---
+    // Eğer tam resimde bulunamadıysa, muhtemelen kontrast sorunu vardır.
+    // Sadece sağ üst köşeyi alıp kontrast uyguluyoruz. Bu işlem tam resme göre çok daha hafiftir.
     let crop_x = (width as f32 * 0.60) as u32;
+    let crop_y = 0;
     let crop_w = width - crop_x;
     let crop_h = (height as f32 * 0.40) as u32;
 
-    let cropped_img = img.crop_imm(crop_x, 0, crop_w, crop_h);
-    if let Some(qr) = scan_helper(&cropped_img) {
-        return Ok(Some(qr));
-    }
-
-    // --- AŞAMA 3: Derin Tarama (Kontrast Artırma) ---
-    let mut gray_img = img.to_luma8();
-    image::imageops::contrast(&mut gray_img, 20.0);
-    let enhanced_img = DynamicImage::ImageLuma8(gray_img);
+    // Sadece bu bölgeyi kopyala
+    let cropped_data = crop_luma_raw(data, width, crop_x, crop_y, crop_w, crop_h);
     
-    if let Some(qr) = scan_helper(&enhanced_img) {
-        return Ok(Some(qr));
+    // ImageBuffer oluştur ve kontrast uygula
+    if let Some(img_buffer) = image::ImageBuffer::<image::Luma<u8>, _>::from_raw(crop_w, crop_h, cropped_data) {
+         let mut gray_img = image::DynamicImage::ImageLuma8(img_buffer).to_luma8();
+         image::imageops::contrast(&mut gray_img, 20.0); // Kontrast artır
+         
+         if let Some(qr) = scan_helper_raw(crop_w, crop_h, gray_img.into_vec()) {
+             return Ok(Some(qr));
+         }
     }
 
     Ok(None)

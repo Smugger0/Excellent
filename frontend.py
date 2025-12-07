@@ -4,9 +4,9 @@ from imports import (
     ft, datetime, time, threading, Decimal, os, sys, 
     win32event, win32api, winerror, ctypes, traceback
 )
-if getattr(sys, 'frozen', False):
-    sys.stdout = open(os.devnull, 'w')
-    sys.stderr = open(os.devnull, 'w')
+# if getattr(sys, 'frozen', False):
+#     sys.stdout = open(os.devnull, 'w')
+#     sys.stderr = open(os.devnull, 'w')
 
 # Windows görev çubuğu simgesi için AppUserModelID ayarla (en başta yapılmalı)
 try:
@@ -341,11 +341,9 @@ def create_invoice_table_content(sort_option="newest", invoice_type="income", on
             if sort_option == "newest":
                 order_by = "id DESC"
             elif sort_option == "date_desc":
-                # SQLite date format conversion for sorting: DD.MM.YYYY -> YYYYMMDD
-                order_by = "substr(tarih, 7, 4) || substr(tarih, 4, 2) || substr(tarih, 1, 2) DESC"
+                order_by = "tarih DESC"
             elif sort_option == "date_asc":
-                # SQLite date format conversion for sorting: DD.MM.YYYY -> YYYYMMDD
-                order_by = "substr(tarih, 7, 4) || substr(tarih, 4, 2) || substr(tarih, 1, 2) ASC"
+                order_by = "tarih ASC"
             else:
                 order_by = "id DESC"
             
@@ -1057,68 +1055,48 @@ class DonutStatCard(ft.Container):
 class TransactionRow(ft.Container):
     def __init__(self, title, date, amount, is_income=True, is_updated=False, is_deleted=False, invoice_date=None, operation_type="EKLEME"):
         super().__init__()
-        self.padding = ft.padding.symmetric(vertical=10, horizontal=5)
-        self.border = ft.border.only(bottom=ft.border.BorderSide(1, "#EEEEEE"))
+        self.padding = ft.padding.all(10)
+        self.border_radius = 12
+        self.bgcolor = "#FFFFFF"
+        self.border = ft.border.all(1, "#F0F0F0")
+        self.margin = ft.margin.only(bottom=5)
         
-        # Temel renkler ve ikonlar (Gelir/Gider durumuna göre)
-        if is_income:
-            base_color = col_success
-            base_icon = ft.Icons.ARROW_CIRCLE_UP
-            bg_color = f"{col_success}15"
-            sign = "+"
-        else:
-            base_color = col_danger
-            base_icon = ft.Icons.ARROW_CIRCLE_DOWN
-            bg_color = f"{col_danger}15"
-            sign = "-"
-
-        # İkon içeriği (Stack ile güncelleme belirteci eklenebilir)
-        icon_stack_controls = [
-            ft.Icon(base_icon, color=base_color, size=24)
-        ]
-        
-        # Güncelleme varsa belirteç ekle (Simgenin yanında)
-        if is_updated and not is_deleted:
-            icon_stack_controls.append(
-                ft.Container(
-                    content=ft.Icon(ft.Icons.EDIT, size=10, color=col_white),
-                    bgcolor=col_secondary, # Turuncu güncelleme rengi
-                    border_radius=50,
-                    padding=2,
-                    width=16,
-                    height=16,
-                    alignment=ft.alignment.center,
-                    right=0,
-                    bottom=0
-                )
-            )
+        # İşlem tipine göre ikon ve renk belirleme
+        if is_deleted or operation_type == "SİLME":
+            icon_name = ft.Icons.DELETE_OUTLINE
+            icon_color = "#9E9E9E" # Gri
+            bg_color = "#F5F5F5"
+            op_text = "SİLİNDİ"
+            amount_color = "#9E9E9E"
+        elif is_updated or operation_type == "GÜNCELLEME":
+            icon_name = ft.Icons.EDIT_OUTLINE
+            icon_color = "#2196F3" # Mavi
+            bg_color = "#E3F2FD"
+            op_text = "GÜNCELLENDİ"
+            amount_color = "#2196F3"
+        else: # EKLEME
+            if is_income:
+                icon_name = ft.Icons.ARROW_UPWARD
+                icon_color = col_success # Yeşil
+                bg_color = "#E8F5E9"
+                op_text = "GELİR EKLENDİ"
+                amount_color = col_success
+            else:
+                icon_name = ft.Icons.ARROW_DOWNWARD
+                icon_color = col_danger # Kırmızı
+                bg_color = "#FFEBEE"
+                op_text = "GİDER EKLENDİ"
+                amount_color = col_danger
 
         # İkon Konteyneri
         icon_container = ft.Container(
-            width=42, 
-            height=42, 
-            bgcolor=bg_color, 
-            border_radius=12, 
-            content=ft.Stack(icon_stack_controls, width=42, height=42, alignment=ft.alignment.center),
-            alignment=ft.alignment.center,
+            content=ft.Icon(icon_name, color=icon_color, size=20),
+            width=40, height=40,
+            bgcolor=bg_color,
+            border_radius=10,
+            alignment=ft.alignment.center
         )
-        
-        # Metin Stilleri (Silinmişse üstü çizili)
-        text_decoration = ft.TextDecoration.LINE_THROUGH if is_deleted else ft.TextDecoration.NONE
-        title_color = "#9E9E9E" if is_deleted else "#333333"
-        amount_color = "#9E9E9E" if is_deleted else base_color
-        
-        # Firma adı
-        title_text = ft.Text(
-            title if title else "—",
-            size=14,
-            weight=ft.FontWeight.W_600,
-            color=title_color,
-            max_lines=1,
-            overflow=ft.TextOverflow.ELLIPSIS,
-            style=ft.TextStyle(decoration=text_decoration)
-        )
-        
+
         # Tarih Formatlama Yardımcısı
         def format_date_str(d_str):
             if not d_str: return ""
@@ -1132,46 +1110,47 @@ class TransactionRow(ft.Container):
                 pass
             return d_str
 
-        # Tarih Formatı: 24.11.2025 (Fat. Tar. 12.05.2025)
-        # date parametresi işlem tarihi (entry date)
-        date_parts = str(date).split(' ') if date else [""]
-        entry_date_str = format_date_str(date_parts[0]) if date_parts else ""
+        # İşlem Tarihi (Giriş Tarihi)
+        op_date_str = str(date) 
         
-        date_info_str = entry_date_str
-        if invoice_date:
-             formatted_invoice_date = format_date_str(invoice_date)
-             if formatted_invoice_date != entry_date_str:
-                date_info_str += f" (Fat. Tar. {formatted_invoice_date})"
+        # Fatura Tarihi
+        inv_date_str = format_date_str(invoice_date) if invoice_date else ""
+
+        # Metin Stilleri
+        text_decoration = ft.TextDecoration.LINE_THROUGH if is_deleted else ft.TextDecoration.NONE
+        title_color = "#757575" if is_deleted else "#333333"
         
-        date_display = ft.Text(date_info_str, size=11, color="#888888")
+        # Tutar Metni
+        sign = "+" if is_income and not is_deleted else ("-" if not is_income and not is_deleted else "")
         
-        # Orta kısım
-        info_column = ft.Column(
-            controls=[title_text, date_display],
-            spacing=2,
-            alignment=ft.MainAxisAlignment.CENTER,
-        )
-        
-        # Tutar
-        amount_str = f"{sign}{amount}" if sign else str(amount)
         amount_text = ft.Text(
-            amount_str,
-            size=15,
-            weight=ft.FontWeight.W_700,
+            f"{sign}{amount}",
+            size=14,
+            weight="bold",
             color=amount_color,
-            text_align=ft.TextAlign.RIGHT,
             style=ft.TextStyle(decoration=text_decoration)
         )
-        
-        self.content = ft.Row(
-            controls=[
-                icon_container,
-                ft.Container(content=info_column, expand=True, padding=ft.padding.only(left=10)),
-                amount_text
-            ],
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER
-        )
+
+        # İçerik Düzeni
+        self.content = ft.Row([
+            icon_container,
+            ft.Column([
+                ft.Text(title if title else "—", size=14, weight="bold", color=title_color, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, style=ft.TextStyle(decoration=text_decoration)),
+                ft.Row([
+                    ft.Container(
+                        content=ft.Text(op_text, size=9, weight="bold", color=icon_color),
+                        bgcolor=bg_color, padding=ft.padding.symmetric(horizontal=6, vertical=2), border_radius=4
+                    ),
+                    ft.Text(f"Giriş: {op_date_str}", size=11, color="#757575"),
+                ], spacing=5, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                
+                ft.Row([
+                    ft.Icon(ft.Icons.CALENDAR_TODAY, size=10, color="#9E9E9E"),
+                    ft.Text(f"Fatura Tarihi: {inv_date_str}", size=11, color="#616161", weight="w500"),
+                ], spacing=4, visible=bool(inv_date_str))
+            ], spacing=3, expand=True),
+            amount_text
+        ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
 def currency_button(text, currency_code, current_selection, on_click_handler):
     is_selected = (currency_code == current_selection)
@@ -2549,10 +2528,10 @@ def main(page: ft.Page):
                         # QR işleme (thread'de) - Tip seçildikten sonra çalışacak
                         def process_in_thread(selected_type):
                             try:
+                                # Dialogun render edilmesi için kısa bir bekleme
+                                time.sleep(0.5)
                                 
-                                # İlerleme dialogu oluştur (burada oluşturuyoruz ki thread başlamadan görünsün)
-                                # Not: Flet'te UI güncellemeleri ana thread'de olmalı, bu yüzden dialogu 
-                                # on_type_selected içinde açacağız, burada sadece güncelleme yapacağız.
+                                start_time = time.time()
                                 
                                 # QR dosyalarını oku
                                 results = backend_instance.process_qr_files_in_folder(
@@ -2563,9 +2542,10 @@ def main(page: ft.Page):
                                 
                                 
                                 if not results:
+                                    # Sonuç yoksa dialogu kapat ve uyarı ver
                                     progress_dialog.open = False
                                     page.snack_bar = ft.SnackBar(
-                                        content=ft.Text("❌ Klasörde işlenebilir dosya bulunamadı!", color=col_white),
+                                        content=ft.Text("❌ Klasörde işlenebilir dosya bulunamadı veya işlem başarısız!", color=col_white),
                                         bgcolor=col_danger
                                     )
                                     page.snack_bar.open = True
@@ -2578,6 +2558,13 @@ def main(page: ft.Page):
                                     selected_type
                                 )
                                 
+                                end_time = time.time()
+                                elapsed = end_time - start_time
+                                if elapsed < 60:
+                                    time_str = f"{elapsed:.1f} sn"
+                                else:
+                                    time_str = f"{int(elapsed // 60)} dk {int(elapsed % 60)} sn"
+                                
                                 # Dialog içeriğini güncelle (Kapatma)
                                 progress_dialog.title = ft.Text("İşlem Tamamlandı", weight="bold")
                                 
@@ -2586,7 +2573,8 @@ def main(page: ft.Page):
                                     f"Başarılı: {summary['added']}\n"
                                     f"Başarısız: {summary['failed']}\n"
                                     f"Mükerrer (Atlanan): {summary['skipped_duplicates']}\n"
-                                    f"İşlem Tipi: {'GELİR' if selected_type == 'outgoing' else 'GIDER'}"
+                                    f"İşlem Tipi: {'GELİR' if selected_type == 'outgoing' else 'GIDER'}\n"
+                                    f"İşlem Süresi: {time_str}"
                                 )
                                 
                                 def close_dlg(e):
@@ -2650,10 +2638,10 @@ def main(page: ft.Page):
                             return True
 
                         # Fatura tipi seçme dialogu callback'i
-                        def on_type_selected(invoice_type):
-                            
-                            # BottomSheet'i kapat (eğer bs referansı varsa)
-                            # Not: bs referansı aşağıda tanımlanıyor, lambda içinde closure olarak gelecek
+                        def on_type_selected(invoice_type, bs_ref):
+                            # BottomSheet'i kapat
+                            bs_ref.open = False
+                            page.update()
                             
                             # Progress dialogu aç
                             page.overlay.append(progress_dialog)
@@ -2663,12 +2651,6 @@ def main(page: ft.Page):
                             # Thread'i başlat
                             threading.Thread(target=process_in_thread, args=(invoice_type,), daemon=True).start()
                     
-                        # Kompakt BottomSheet ile tip seçme
-                        
-                        def close_bs(bs):
-                            bs.open = False
-                            page.update()
-                        
                         # BottomSheet tanımla
                         bs = ft.BottomSheet(
                             content=ft.Container(
@@ -2682,7 +2664,7 @@ def main(page: ft.Page):
                                             ft.Icon(ft.Icons.ARROW_DOWNWARD, color=col_white),
                                             ft.Text("GELİR (Satış Faturası)", color=col_white, size=16)
                                         ], tight=True),
-                                        on_click=lambda _: (close_bs(bs), on_type_selected('outgoing')),
+                                        on_click=lambda _: on_type_selected('outgoing', bs),
                                         bgcolor=col_success,
                                         width=300,
                                         height=60
@@ -2693,7 +2675,7 @@ def main(page: ft.Page):
                                             ft.Icon(ft.Icons.ARROW_UPWARD, color=col_white),
                                             ft.Text("GİDER (Alış Faturası)", color=col_white, size=16)
                                         ], tight=True),
-                                        on_click=lambda _: (close_bs(bs), on_type_selected('incoming')),
+                                        on_click=lambda _: on_type_selected('incoming', bs),
                                         bgcolor=col_danger,
                                         width=300,
                                         height=60
@@ -2701,7 +2683,7 @@ def main(page: ft.Page):
                                     ft.Container(height=10),
                                     ft.TextButton(
                                         "İptal",
-                                        on_click=lambda _: close_bs(bs)
+                                        on_click=lambda _: (setattr(bs, 'open', False), page.update())
                                     )
                                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, tight=True, spacing=0)
                             ),
@@ -3205,46 +3187,60 @@ def main(page: ft.Page):
     
     def _process_history_records(records):
         """Geçmiş kayıtlarını transaction formatına çevirir"""
+        import re
         transactions = []
         
         for record in records:
-            operation_type = record.get('operation_type', '')
-            invoice_type = record.get('invoice_type', '')
+            # Record yapısı: {'id': 1, 'action': 'EKLEME_GELIR', 'details': '...', 'timestamp': '...'}
             
-            # Gelir mi gider mi?
-            is_income = (invoice_type == 'gelir' or invoice_type == 'outgoing')
+            action = record.get('action', '')
+            details = record.get('details', '')
+            timestamp = record.get('timestamp', '')
             
-            # İşlem tipi kontrolü
+            # Action'dan işlem tipi ve fatura tipi çıkar
+            parts = action.split('_')
+            operation_type = parts[0] if len(parts) > 0 else "İŞLEM"
+            invoice_type_raw = parts[1] if len(parts) > 1 else ""
+            
+            is_income = (invoice_type_raw == 'GELIR')
+            
             is_updated = (operation_type == 'GÜNCELLEME')
             is_deleted = (operation_type == 'SİLME')
             
-            # Tarih ve saat
-            op_date = record.get('operation_date', '')
-            op_time = record.get('operation_time', '')
+            # Timestamp'ten tarih ve saat çıkar (ISO format: YYYY-MM-DDTHH:MM:SS...)
+            try:
+                # fromisoformat bazen Z veya +00:00 ile sorun yaşayabilir, basitçe ilk 19 karakteri alalım
+                ts_clean = timestamp[:19]
+                dt = datetime.fromisoformat(ts_clean)
+                op_date = dt.strftime("%d.%m.%Y")
+                op_time = dt.strftime("%H:%M")
+                display_date = f"{op_date} {op_time}"
+            except:
+                display_date = timestamp
+                op_date = timestamp
+                op_time = ""
+
+            # Details stringinden bilgileri çıkar
+            # Örnek: "Gelir fatura eklendi - Firma: ABC - Tutar: 100 TL - Tarih: 01.01.2025"
             
-            # Saat kısmını kısalt (sadece saat:dakika)
-            if op_time and len(op_time) > 5:
-                op_time = op_time[:5]  # "14:30:45" -> "14:30"
+            title = "İşlem"
+            amount_str = "0.00"
+            invoice_date = ""
             
-            display_date = f"{op_date} {op_time}"
-            
-            # Fatura tarihi
-            invoice_date = record.get('invoice_date', '')
-            
-            # Başlık (Firma veya Detay)
-            title = record.get('firma')
-            if not title or title == 'None':
-                title = record.get('details', 'İşlem')
+            # Firma
+            firma_match = re.search(r'Firma:\s*(.*?)(?:\s-\s|$)', details)
+            if firma_match:
+                title = firma_match.group(1)
             
             # Tutar
-            amount_val = record.get('amount')
-            if amount_val:
-                try:
-                    amount_str = f"{float(amount_val):,.2f}"
-                except:
-                    amount_str = str(amount_val)
-            else:
-                amount_str = "0.00"
+            amount_match = re.search(r'Tutar:\s*([\d\.,]+)', details)
+            if amount_match:
+                amount_str = amount_match.group(1)
+            
+            # Fatura Tarihi
+            date_match = re.search(r'Tarih:\s*([\d\.]+)', details)
+            if date_match:
+                invoice_date = date_match.group(1)
             
             transactions.append({
                 'title': title,
@@ -3255,7 +3251,7 @@ def main(page: ft.Page):
                 'is_updated': is_updated,
                 'is_deleted': is_deleted,
                 'operation_type': operation_type,
-                'sort_key': f"{op_date} {op_time}"  # Sıralama için
+                'sort_key': timestamp  # Sıralama için timestamp kullan
             })
         
         # Tarihe göre ters sıralama (en yeni üstte)
@@ -3281,21 +3277,27 @@ def main(page: ft.Page):
         
         if filter_date:
             # Tarih filtresi varsa veritabanından o tarihteki işlemleri çek
-            str_date = filter_date.strftime("%d.%m.%Y")
+            display_date = filter_date.strftime("%d.%m.%Y")
+            
+            # Veritabanı sorgusu için ISO formatı (YYYY-MM-DD)
+            # Günün başlangıcı ve bitişi
+            query_date_str = filter_date.strftime("%Y-%m-%d")
+            start_str = f"{query_date_str}T00:00:00"
+            end_str = f"{query_date_str}T23:59:59"
             
             # Başlık ekle
             transactions_column.controls.append(
                 ft.Container(
                     content=ft.Row([
-                        ft.Icon("calendar_today", color=col_primary, size=16),
-                        ft.Text(f"{str_date} tarihli işlemler", size=13, weight="bold", color=col_primary)
+                        ft.Icon(ft.Icons.CALENDAR_TODAY, color=col_primary, size=16),
+                        ft.Text(f"{display_date} tarihli işlemler", size=13, weight="bold", color=col_primary)
                     ], spacing=5),
                     padding=ft.padding.only(bottom=10)
                 )
             )
             
             # O tarihteki işlemleri getir
-            history_records = backend_instance.get_history_by_date_range(str_date, str_date)
+            history_records = backend_instance.get_history_by_date_range(start_str, end_str)
             filtered_data = _process_history_records(history_records)
         else:
             # Filtre yoksa son işlemleri yeniden çek
