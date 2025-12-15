@@ -1,4 +1,4 @@
-# Frontend.py - Flet UI
+# Frontend.py - Flet Arayüzü
 # -*- coding: utf-8 -*-
 """
 KULLANICI ARAYÜZÜ (UI) MODÜLÜ
@@ -31,7 +31,7 @@ last_error = win32api.GetLastError()
 
 if last_error == winerror.ERROR_ALREADY_EXISTS:
     # Uygulama zaten çalışıyor
-    ctypes.windll.user32.MessageBoxW(0, tr("app_already_running"), tr("warning"), 0x30)
+    ctypes.windll.user32.MessageBoxW(0, get_text("app_already_running", "tr"), get_text("warning", "tr"), 0x30)
     sys.exit(0)
 
 # Backend instance oluştur (Tüm uygulama boyunca tek bir instance kullanılır)
@@ -114,7 +114,7 @@ def tr(key):
 
 # --- BACKEND YARDIMCI FONKSİYONLAR ---
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    """ Kaynağa mutlak yolu al, geliştirme ve PyInstaller için çalışır """
     try:
         # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
@@ -330,11 +330,11 @@ def create_vertical_input(label, hint, width=None, expand=True, is_dropdown=Fals
     ], spacing=3, expand=expand)
 
 # --- FATURA VERİSİ ---
-# Frontend sample invoice data removed to avoid embedded backend/test scaffolding.
-# Integrate a backend data source and supply rows dynamically when ready.
+# Gömülü backend/test iskelesinden kaçınmak için frontend örnek fatura verileri kaldırıldı.
+# Hazır olduğunda bir backend veri kaynağını entegre edin ve satırları dinamik olarak sağlayın.
 
 # ============================================================================
-# FATURA TABLOSU OLUŞTURMA (Invoice Table Creation)
+# FATURA TABLOSU OLUŞTURMA
 # ============================================================================
 def create_invoice_table_content(sort_option="newest", invoice_type="income", on_select_changed=None, invoice_list=None):
     """Backend'den fatura verilerini çekerek DataTable oluşturur."""
@@ -458,7 +458,7 @@ def create_invoice_table_content(sort_option="newest", invoice_type="income", on
     )
 
 # ============================================================================
-# DÖNEMSEL TABLO OLUŞTURMA (Periodic Table Creation)
+# DÖNEMSEL TABLO OLUŞTURMA
 # ============================================================================
 def create_donemsel_table(year=None, tax_fields=None, on_tax_change=None):
     """Dönemsel gelir/gider tablosu - Gerçek verilerle dolu"""
@@ -689,7 +689,7 @@ def create_donemsel_table(year=None, tax_fields=None, on_tax_change=None):
         return ft.Text("Veri yüklenirken hata oluştu.")
 
 # ============================================================================
-# GENEL GİDERLER TABLOSU (General Expenses Grid)
+# GENEL GİDERLER TABLOSU
 # ============================================================================
 def create_grid_expenses(page):
     def create_styled_icon_button(icon, color, tooltip, on_click):
@@ -1227,7 +1227,7 @@ def currency_button(text, currency_code, current_selection, on_click_handler):
 
 # --- ANA UYGULAMA ---
 # ============================================================================
-# ANA UYGULAMA (Main Application)
+# ANA UYGULAMA
 # ============================================================================
 def main(page: ft.Page):
     page.title = "Excellent"
@@ -1277,7 +1277,7 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.DARK if saved_theme == "dark" else ft.ThemeMode.LIGHT
 
     # ------------------------------------------------------------------------
-    # FILE PICKERS (GLOBAL TO MAIN)
+    # DOSYA SEÇİCİLER (MAIN İÇİN GLOBAL)
     # ------------------------------------------------------------------------
     def on_save_invoices_excel_result(e: ft.FilePickerResultEvent):
         if e.path:
@@ -1363,7 +1363,7 @@ def main(page: ft.Page):
     invoice_excel_picker = ft.FilePicker(on_result=on_save_invoices_excel_result)
     invoice_pdf_picker = ft.FilePicker(on_result=on_save_invoices_pdf_result)
     
-    # Attach to page object for global access
+    # Global erişim için sayfa nesnesine ekle
     page.invoice_excel_picker = invoice_excel_picker
     page.invoice_pdf_picker = invoice_pdf_picker
     
@@ -1371,7 +1371,7 @@ def main(page: ft.Page):
     page.update()
 
     # ------------------------------------------------------------------------
-    # VERİ YARDIMCILARI (Data Helpers)
+    # VERİ YARDIMCILARI
     # ------------------------------------------------------------------------
     def get_all_available_years():
         """Veritabanındaki tüm yılları döndürür (gelir, gider ve genel gider tablolarından) - sadece veri olan yıllar"""
@@ -1518,7 +1518,7 @@ def main(page: ft.Page):
             return {}
     
     # ------------------------------------------------------------------------
-    # GRAFİK ÇİZİM FONKSİYONLARI (Chart Drawing Functions)
+    # GRAFİK ÇİZİM FONKSİYONLARI
     # ------------------------------------------------------------------------
     full_data = get_line_chart_data()  # Backend'den gerçek veri
 
@@ -1682,7 +1682,7 @@ def main(page: ft.Page):
 
     # Backend callback'ini yeniden tanımla (grafikleri güncellemek için)
     # ------------------------------------------------------------------------
-    # VERİ GÜNCELLEME (Data Refresh)
+    # VERİ GÜNCELLEME
     # ------------------------------------------------------------------------
     def refresh_charts_and_data():
         """Grafikleri ve verileri yeniden yükler"""
@@ -1758,7 +1758,7 @@ def main(page: ft.Page):
     state["update_callbacks"]["home_page"] = refresh_charts_and_data
 
     # ------------------------------------------------------------------------
-    # SIDEBAR BİLEŞENLERİ (Sidebar Components)
+    # SIDEBAR BİLEŞENLERİ
     # ------------------------------------------------------------------------
     class SidebarButton(ft.Container):
         def __init__(self, icon_name, text, page_name, is_selected=False):
@@ -1845,7 +1845,7 @@ def main(page: ft.Page):
         page.update()
 
     # ------------------------------------------------------------------------
-    # DÖNEMSEL GELİR SAYFASI (Periodic Income Page)
+    # DÖNEMSEL GELİR SAYFASI
     # ------------------------------------------------------------------------
     def create_donemsel_page():
         def create_styled_icon_button(icon, color, tooltip, on_click):
@@ -1998,7 +1998,7 @@ def main(page: ft.Page):
         
         year_dropdown.on_change = on_year_change
         
-        # File Picker Handlers
+        # Dosya Seçici İşleyicileri
         def on_save_excel_result(e: ft.FilePickerResultEvent):
             print(f"DEBUG: on_save_excel_result path={e.path}")
             if e.path:
@@ -2073,7 +2073,7 @@ def main(page: ft.Page):
         save_file_picker_pdf = ft.FilePicker(on_result=on_save_pdf_result)
         page.overlay.extend([save_file_picker_excel, save_file_picker_pdf])
         
-        # Export fonksiyonları
+        # Dışa Aktarma Fonksiyonları
         def export_to_excel_donemsel(e):
             """Dönemsel gelir raporunu Excel'e aktar"""
             print("DEBUG: export_to_excel_donemsel clicked")
@@ -2234,7 +2234,7 @@ def main(page: ft.Page):
         )
 
     # ------------------------------------------------------------------------
-    # FATURALAR SAYFASI (Invoices Page)
+    # FATURALAR SAYFASI
     # ------------------------------------------------------------------------
     def create_invoices_page():
         def create_styled_icon_button(icon, color, tooltip, on_click):
@@ -2251,7 +2251,7 @@ def main(page: ft.Page):
                 height=35,
             )
 
-        # File Pickers are defined in main() scope to avoid re-creation issues
+        # Yeniden oluşturma sorunlarını önlemek için Dosya Seçiciler main() kapsamında tanımlanmıştır
 
 
         general_expenses_section = create_grid_expenses(page)
@@ -2894,7 +2894,7 @@ def main(page: ft.Page):
                         bs = ft.BottomSheet(
                             content=ft.Container(
                                 padding=20,
-                                bgcolor="#1A1D1F", # col_dark yerine hardcoded, col_dark tanımlı olmayabilir
+                                bgcolor="#1A1D1F", # col_dark yerine sabit kodlanmış, col_dark tanımlı olmayabilir
                                 content=ft.Column([
                                     ft.Text(tr("select_invoice_type"), size=20, weight="bold", color=col_white),
                                     ft.Container(height=10),
@@ -3065,7 +3065,7 @@ def main(page: ft.Page):
         
         operation_buttons = ft.Row([btn_clear, btn_add, btn_update, btn_delete_container], spacing=15)
 
-        # Sağ üst butonlar - QR, Excel, PDF export
+        # Sağ üst butonlar - QR, Excel, PDF dışa aktarma
         btn_qr = create_styled_icon_button(ft.Icons.QR_CODE_SCANNER, "#3498DB", tr("qr_scan"), process_qr_folder)
         
         btn_excel = create_styled_icon_button(ft.Icons.TABLE_VIEW, "#217346", tr("export_excel"), export_to_excel)
@@ -3078,7 +3078,7 @@ def main(page: ft.Page):
 
         sort_dropdown = ft.Container(padding=ft.padding.only(left=20), content=ft.Dropdown(options=[ft.dropdown.Option("newest", tr("sort_newest")), ft.dropdown.Option("date_desc", tr("sort_date_desc")), ft.dropdown.Option("date_asc", tr("sort_date_asc"))], value="newest", on_change=on_sort_change, width=160, text_size=13, label=tr("sort"), border_radius=10, content_padding=10, bgcolor="surface", border_color="outline"))
 
-        # Backup butonu
+        # Yedekleme butonu
         btn_backup = create_styled_icon_button(ft.Icons.BACKUP, "#8E44AD", tr("backup_db"), backup_database)
 
         controls_row = ft.Row([type_toggle_btn, sort_dropdown, btn_backup, ft.Container(expand=True), right_buttons_container], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER)
@@ -3132,7 +3132,7 @@ def main(page: ft.Page):
         )
 
     # ------------------------------------------------------------------------
-    # SAYFA YÖNETİMİ VE NAVİGASYON (Page Management & Navigation)
+    # SAYFA YÖNETİMİ VE NAVİGASYON
     # ------------------------------------------------------------------------
     # Sayfa Yöneticisi
     dashboard_content = ft.Container() 
@@ -3211,7 +3211,7 @@ def main(page: ft.Page):
             theme_btn.tooltip = tr("dark_mode")
             new_mode = "light"
         else:
-            # System mode - check brightness
+            # Sistem modu - parlaklığı kontrol et
             if page.platform_brightness == ft.Brightness.DARK:
                 page.theme_mode = ft.ThemeMode.LIGHT
                 theme_btn.icon = ft.Icons.NIGHTLIGHT_ROUND
@@ -3323,7 +3323,7 @@ def main(page: ft.Page):
     sidebar_container = ft.Container(width=90, height=900, bgcolor="surface", padding=ft.padding.symmetric(horizontal=15, vertical=20), content=sidebar_column, animate=ft.Animation(300, "easeOut"), shadow=ft.BoxShadow(blur_radius=10, color="shadow"))
 
     # ------------------------------------------------------------------------
-    # DASHBOARD İÇERİK VE YARDIMCILARI (Dashboard Content & Helpers)
+    # DASHBOARD İÇERİK VE YARDIMCILARI
     # ------------------------------------------------------------------------
     # --- DASHBOARD İÇERİK ---
     def change_currency(currency_code):
@@ -3342,7 +3342,7 @@ def main(page: ft.Page):
     # Kur bilgisi text'i dinamik olarak oluştur
     exchange_rate_text = ft.Text(get_exchange_rate_display(), size=13, color="onSurfaceVariant", weight="w600")
     
-    # header definition moved to create_dashboard_layout
+    # başlık tanımı create_dashboard_layout içine taşındı
 
     # Backend'den gerçek verileri çek
     def get_dashboard_stats(year=None):
@@ -3430,7 +3430,7 @@ def main(page: ft.Page):
                 'expense_count': 0
             }
     
-    # stats_row moved to create_dashboard_layout
+    # stats_row create_dashboard_layout içine taşındı
     
     # Son işlemleri backend'den çek
     def get_recent_transactions():
@@ -3825,7 +3825,7 @@ def main(page: ft.Page):
 
     def reset_transactions(e): update_transactions(None)
 
-    # transactions_list moved to create_dashboard_layout
+    # transactions_list create_dashboard_layout içine taşındı
 
     # Yıl dropdown'ı için dinamik seçenekler oluştur - tüm veritabanı yıllarını çek
     available_years = get_all_available_years()
@@ -3840,7 +3840,7 @@ def main(page: ft.Page):
         exchange_rate_text = ft.Text(get_exchange_rate_display(), size=13, color="onSurfaceVariant", weight="w600")
         header = ft.Row([ft.Text(tr("dashboard_title"), size=26, weight="bold", color="onBackground"), ft.Row([ft.Container(bgcolor="secondaryContainer", padding=ft.padding.symmetric(horizontal=15, vertical=10), border_radius=8, content=ft.Row([ft.Icon("currency_exchange", size=16, color="primary"), exchange_rate_text], spacing=10)), currency_selector_container], spacing=20)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
-        # Stats Row
+        # İstatistik Satırı
         stats = get_dashboard_stats()
         net_profit_trend = "+15%" if stats['net_profit'] > 0 else "0%"
         income_trend = "+4%" if stats['total_income'] > 0 else "0%"
@@ -3865,11 +3865,11 @@ def main(page: ft.Page):
                         stats['monthly_avg'], avg_max, format_currency(stats['monthly_avg'], currency=current_currency, compact=True))
         ], spacing=20)
 
-        # Transactions List
+        # İşlem Listesi
         transactions_list_content = ft.Column([ft.Row([ft.Text(tr("recent_transactions"), size=18, weight="bold", color="onBackground"), ft.Row([ft.IconButton(icon="calendar_month", icon_color="onSurfaceVariant", tooltip=tr("tooltip_go_to_date"), on_click=open_date_dialog), ft.TextButton(tr("btn_latest_entries"), style=ft.ButtonStyle(color=col_primary), on_click=reset_transactions)])], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), ft.Container(height=15), transactions_column], spacing=5)
         transactions_list = ft.Container(bgcolor="surface", border_radius=20, padding=25, shadow=ft.BoxShadow(blur_radius=20, color="#08000000"), height=450, content=transactions_list_content)
 
-        # Chart Container
+        # Grafik Konteyneri
         chart_container = ft.Container(bgcolor="surface", border_radius=20, padding=ft.padding.only(left=30, right=30, top=30, bottom=10), expand=2, shadow=ft.BoxShadow(blur_radius=20, color="#08000000"), height=450, content=ft.Column([ft.Row([ft.Column([ft.Text(tr("performance_analysis"), size=20, weight="bold", color="onBackground"), ft.Text(tr("yearly_comparison"), size=13, color="onSurfaceVariant")]), year_dropdown_ref], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), ft.Container(height=20), ft.Container(content=line_chart, expand=True), ft.Row([ft.Row([ft.Container(width=10, height=10, bgcolor=col_primary, border_radius=2), ft.Text(tr("legend_income"), size=12, color="grey")], spacing=5), ft.Row([ft.Container(width=10, height=10, bgcolor=col_secondary, border_radius=2), ft.Text(tr("legend_expense"), size=12, color="grey")], spacing=5)], alignment=ft.MainAxisAlignment.CENTER)]))
 
         return ft.Column([header, ft.Container(height=10), stats_row, ft.Container(height=10), ft.Row([chart_container, ft.Container(content=transactions_list, expand=1)], expand=True, spacing=20)], spacing=10)
@@ -3901,7 +3901,7 @@ def main(page: ft.Page):
     threading.Thread(target=start_animations, daemon=True).start()
 
     # ------------------------------------------------------------------------
-    # GÜNCELLEME FONKSİYONLARI (Update Functions)
+    # GÜNCELLEME FONKSİYONLARI
     # ------------------------------------------------------------------------
 
     # Güncelleme kontrolü - sadece ana sayfa için
@@ -3960,7 +3960,7 @@ def main(page: ft.Page):
 # Assets dizinini belirle (PyInstaller için)
 def get_assets_dir():
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        # PyInstaller geçici bir klasör oluşturur ve yolu _MEIPASS içinde saklar
         return sys._MEIPASS
     except Exception:
         return os.path.abspath(".")
