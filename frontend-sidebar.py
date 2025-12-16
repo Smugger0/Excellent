@@ -171,7 +171,7 @@ def get_exchange_rate_display():
         usd_tl = 1 / usd_rate
         eur_tl = 1 / eur_rate
         return f"1 USD = {usd_tl:.2f} TL | 1 EUR = {eur_tl:.2f} TL"
-    return "Kur bilgisi yükleniyor..."
+    return tr("loading_rates")
 
 # --- YARDIMCI BİLEŞENLER ---
 
@@ -686,7 +686,7 @@ def create_donemsel_table(year=None, tax_fields=None, on_tax_change=None):
         return ft.Column([header_row] + quarter_blocks)
         
     except Exception as e:
-        return ft.Text("Veri yüklenirken hata oluştu.")
+        return ft.Text(tr("error_loading_data"))
 
 # ============================================================================
 # GENEL GİDERLER TABLOSU
@@ -864,7 +864,7 @@ def create_grid_expenses(page):
                 
                 msg = tr("msg_expenses_saved").format(selected_year)
                 if current_curr != "TL":
-                    msg += f" ({current_curr} -> TL çevrildi)"
+                    msg += f" {tr('converted_to_tl').format(current_curr)}"
                 
                 page.snack_bar = ft.SnackBar(content=ft.Text(msg, color=col_white), bgcolor=col_success)
                 page.snack_bar.open = True
@@ -2503,7 +2503,7 @@ def main(page: ft.Page):
                     page.update()
                     
             except Exception as ex:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"❌ Hata: {str(ex)}", color=col_white), bgcolor=col_danger)
+                page.snack_bar = ft.SnackBar(content=ft.Text(tr("msg_error_prefix").format(str(ex)), color=col_white), bgcolor=col_danger)
                 page.snack_bar.open = True
                 page.update()
 
@@ -2596,7 +2596,7 @@ def main(page: ft.Page):
                     page.update()
                     
             except Exception as ex:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"❌ Güncelleme hatası: {str(ex)}", color=col_white), bgcolor=col_danger)
+                page.snack_bar = ft.SnackBar(content=ft.Text(tr("msg_update_error_prefix").format(str(ex)), color=col_white), bgcolor=col_danger)
                 page.snack_bar.open = True
                 page.update()
 
@@ -2615,7 +2615,7 @@ def main(page: ft.Page):
                 
                 
                 if not selected_rows:
-                    page.snack_bar = ft.SnackBar(content=ft.Text("⚠️ Lütfen silmek için en az bir fatura seçin!", color=col_white), bgcolor=col_secondary)
+                    page.snack_bar = ft.SnackBar(content=ft.Text(tr("msg_select_to_delete"), color=col_white), bgcolor=col_secondary)
                     page.snack_bar.open = True
                     page.update()
                     return
@@ -2703,7 +2703,7 @@ def main(page: ft.Page):
                         
                     except Exception as ex:
                         page.snack_bar = ft.SnackBar(
-                            content=ft.Text(f"❌ Silme hatası: {str(ex)}", color=col_white),
+                            content=ft.Text(tr("msg_delete_error_prefix").format(str(ex)), color=col_white),
                             bgcolor=col_danger
                         )
                         page.snack_bar.open = True
@@ -2733,7 +2733,7 @@ def main(page: ft.Page):
             
             except Exception as ex:
                 page.snack_bar = ft.SnackBar(
-                    content=ft.Text(f"❌ Hata: {str(ex)}", color=col_white),
+                    content=ft.Text(tr("msg_error_prefix").format(str(ex)), color=col_white),
                     bgcolor=col_danger
                 )
                 page.snack_bar.open = True
@@ -3245,7 +3245,7 @@ def main(page: ft.Page):
         
         # Buton metnini güncelle
         lang_btn.content.value = "TR" if new_lang == "en" else "EN"
-        lang_btn.tooltip = "Türkçe" if new_lang == "en" else "English"
+        lang_btn.tooltip = tr("tooltip_lang_tr") if new_lang == "en" else tr("tooltip_lang_en")
         
         # Tema butonu tooltip güncelle
         if page.theme_mode == ft.ThemeMode.DARK:
@@ -3292,14 +3292,14 @@ def main(page: ft.Page):
         padding=8,
         border_radius=8,
         on_click=toggle_language,
-        tooltip="English",
+        tooltip=tr("tooltip_lang_en"),
         ink=True
     )
 
     try:
         if page.platform_brightness == ft.Brightness.DARK:
             theme_btn.icon = ft.Icons.WB_SUNNY
-            theme_btn.tooltip = "Açık Mod"
+            theme_btn.tooltip = tr("light_mode")
     except:
         pass
 
@@ -3561,7 +3561,7 @@ def main(page: ft.Page):
             filtered_data = get_recent_transactions()
 
         if not filtered_data:
-            transactions_column.controls.append(ft.Container(content=ft.Text("Bu tarihte işlem bulunamadı.", color="onSurfaceVariant"), alignment=ft.alignment.center, padding=20))
+            transactions_column.controls.append(ft.Container(content=ft.Text(tr("no_transactions"), color="onSurfaceVariant"), alignment=ft.alignment.center, padding=20))
         else:
             for t in filtered_data:
                 transactions_column.controls.append(
@@ -3593,7 +3593,7 @@ def main(page: ft.Page):
 
     # Özel Türkçe tarih seçici dialog
     date_input_field = ft.TextField(
-        hint_text="ggaayy veya gg.aa.yyyy (örn. 121225)",
+        hint_text=tr("hint_date"),
         hint_style=ft.TextStyle(color="#D0D0D0", size=12),
         text_size=14,
         color="onBackground",
@@ -3616,7 +3616,7 @@ def main(page: ft.Page):
         """Girilen tarihi parse edip filtrele"""
         input_val = date_input_field.value
         if not input_val or not input_val.strip():
-            date_dialog_error.value = "Lütfen bir tarih girin"
+            date_dialog_error.value = tr("msg_enter_date")
             date_dialog_error.visible = True
             page.update()
             return
@@ -3641,13 +3641,12 @@ def main(page: ft.Page):
             else:
                 raise ValueError("Geçersiz format")
         except (ValueError, IndexError):
-            date_dialog_error.value = "Geçersiz tarih! Örn: 121225 veya 12.12.2025"
+            date_dialog_error.value = tr("msg_invalid_date_format")
             date_dialog_error.visible = True
             page.update()
     
     # Türkçe ay isimleri ile takvim görünümü için basit bir seçici
-    TURKISH_MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", 
-                      "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+    # TURKISH_MONTHS artık kullanılmıyor, tr() fonksiyonu ile dinamik alınıyor
     
     current_cal_year = datetime.now().year
     current_cal_month = datetime.now().month
@@ -3781,17 +3780,17 @@ def main(page: ft.Page):
     
     date_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("Tarih Seçin", weight="bold", size=18),
+        title=ft.Text(tr("select_date_title"), weight="bold", size=18),
         content=ft.Container(
             width=320,
             content=ft.Column([
                 # Manuel tarih girişi
-                ft.Text("Tarih Girin:", size=13, color="onSurfaceVariant"),
+                ft.Text(tr("enter_date_label"), size=13, color="onSurfaceVariant"),
                 date_input_field,
                 date_dialog_error,
                 ft.Container(height=5),
                 ft.ElevatedButton(
-                    "Tarihe Git",
+                    tr("go_to_date"),
                     icon="search",
                     bgcolor=col_primary,
                     color=col_white,
@@ -3800,7 +3799,7 @@ def main(page: ft.Page):
                 ),
                 ft.Divider(height=20),
                 # Takvim görünümü
-                ft.Text("veya Takvimden Seçin:", size=13, color="onSurfaceVariant"),
+                ft.Text(tr("or_select_calendar"), size=13, color="onSurfaceVariant"),
                 ft.Container(height=5),
                 ft.Row([
                     ft.IconButton(icon="chevron_left", on_click=prev_month, icon_color=col_primary),
@@ -3838,7 +3837,12 @@ def main(page: ft.Page):
     def create_dashboard_layout():
         # Header
         exchange_rate_text = ft.Text(get_exchange_rate_display(), size=13, color="onSurfaceVariant", weight="w600")
-        header = ft.Row([ft.Text(tr("dashboard_title"), size=26, weight="bold", color="onBackground"), ft.Row([ft.Container(bgcolor="secondaryContainer", padding=ft.padding.symmetric(horizontal=15, vertical=10), border_radius=8, content=ft.Row([ft.Icon("currency_exchange", size=16, color="primary"), exchange_rate_text], spacing=10)), currency_selector_container], spacing=20)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+        
+        # Warning icon logic
+        show_warning = backend_instance.using_default_rates
+        rate_warning_icon = ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, color=col_danger, size=16, visible=show_warning, tooltip=tr("rate_warning_tooltip"))
+
+        header = ft.Row([ft.Text(tr("dashboard_title"), size=26, weight="bold", color="onBackground"), ft.Row([ft.Container(bgcolor="secondaryContainer", padding=ft.padding.symmetric(horizontal=15, vertical=10), border_radius=8, content=ft.Row([ft.Icon("currency_exchange", size=16, color="primary"), exchange_rate_text, rate_warning_icon], spacing=10)), currency_selector_container], spacing=20)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
         # İstatistik Satırı
         stats = get_dashboard_stats()

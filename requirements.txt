@@ -1,0 +1,11 @@
+flet
+numpy
+pandas
+requests
+opencv-python
+pyzbar
+pymupdf
+reportlab
+XlsxWriter
+pywin32
+Pillow

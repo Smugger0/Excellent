@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['frontend.py'],
+    ['frontend-topbar.py'],
     pathex=[],
     binaries=[
         ('.venv\\Lib\\site-packages\\pyzbar\\libiconv.dll', 'pyzbar'), 

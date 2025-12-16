@@ -97,6 +97,7 @@ class Backend:
             'USD': 0.0,
             'EUR': 0.0
         }
+        self.using_default_rates = False
         
         # Başlangıçta kurları güncelle
         self.update_exchange_rates()
@@ -167,6 +168,7 @@ class Backend:
         # Hiçbir kaynak yoksa gerçekçi varsayılan değerleri kullan
         logging.warning("Tüm döviz kuru kaynakları başarısız. Varsayılan kurlar kullanılıyor.")
         self.exchange_rates = {'USD': 0.030, 'EUR': 0.028} 
+        self.using_default_rates = True
         if self.on_status_updated:
             self.on_status_updated("İnternet bağlantısı yok! Varsayılan kurlar kullanılıyor.", 5000)
     
@@ -201,6 +203,7 @@ class Backend:
                 usd_rate = 1.0 / usd_sell
                 eur_rate = 1.0 / eur_sell
                 self.exchange_rates = {'USD': usd_rate, 'EUR': eur_rate}
+                self.using_default_rates = False
                 self._save_rates_to_db()  # Kurları veritabanına kaydet
                 if self.on_status_updated:
                     self.on_status_updated("TCMB döviz kurları güncellendi.", 3000)
@@ -242,6 +245,7 @@ class Backend:
                         usd_rate = 1.0 / usd_sell
                         eur_rate = 1.0 / eur_sell
                         self.exchange_rates = {'USD': usd_rate, 'EUR': eur_rate}
+                        self.using_default_rates = False
                         self._save_rates_to_db()
                         logging.info(f"TCMB önceki gün kurları ({prev_date.strftime('%d.%m.%Y')} - BanknoteSelling): 1 USD = {usd_sell:.4f} TL, 1 EUR = {eur_sell:.4f} TL")
                         return True
@@ -267,6 +271,7 @@ class Backend:
             usd_rate, eur_rate = self.db.load_exchange_rates()
             if usd_rate > 0 or eur_rate > 0:
                 self.exchange_rates = {'USD': usd_rate, 'EUR': eur_rate}
+                self.using_default_rates = False
                 logging.info(f"Veritabanından yüklenen kurlar: {self.exchange_rates}")
                 return True
         except Exception as e:

@@ -1923,7 +1923,7 @@ def main(page: ft.Page):
                 save_file_picker_excel.save_file(dialog_title="Excel Raporunu Kaydet", file_name=filename, allowed_extensions=["xlsx"])
             except Exception as ex:
                 if "cancelled" not in str(ex).lower():
-                    page.snack_bar = ft.SnackBar(content=ft.Text(f"❌ Hata: {str(ex)}", color=col_white), bgcolor=col_danger)
+                    page.snack_bar = ft.SnackBar(content=ft.Text(tr("msg_error_prefix").format(str(ex)), color=col_white), bgcolor=col_danger)
                     page.snack_bar.open = True
                     page.update()
         
@@ -1939,7 +1939,7 @@ def main(page: ft.Page):
                 save_file_picker_pdf.save_file(dialog_title="PDF Raporunu Kaydet", file_name=filename, allowed_extensions=["pdf"])
             except Exception as ex:
                 if "cancelled" not in str(ex).lower():
-                    page.snack_bar = ft.SnackBar(content=ft.Text(f"❌ Hata: {str(ex)}", color=col_white), bgcolor=col_danger)
+                    page.snack_bar = ft.SnackBar(content=ft.Text(tr("msg_error_prefix").format(str(ex)), color=col_white), bgcolor=col_danger)
                     page.snack_bar.open = True
                     page.update()
         
@@ -2411,7 +2411,7 @@ def main(page: ft.Page):
                     page.update()
                     
             except Exception as ex:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"❌ Hata: {str(ex)}", color=col_white), bgcolor=col_danger)
+                page.snack_bar = ft.SnackBar(content=ft.Text(tr("msg_error_prefix").format(str(ex)), color=col_white), bgcolor=col_danger)
                 page.snack_bar.open = True
                 page.update()
 
@@ -2504,7 +2504,7 @@ def main(page: ft.Page):
                     page.update()
                     
             except Exception as ex:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"❌ Güncelleme hatası: {str(ex)}", color=col_white), bgcolor=col_danger)
+                page.snack_bar = ft.SnackBar(content=ft.Text(tr("msg_update_error_prefix").format(str(ex)), color=col_white), bgcolor=col_danger)
                 page.snack_bar.open = True
                 page.update()
 
@@ -2611,7 +2611,7 @@ def main(page: ft.Page):
                         
                     except Exception as ex:
                         page.snack_bar = ft.SnackBar(
-                            content=ft.Text(f"❌ {tr('error')}: {str(ex)}", color=col_white),
+                            content=ft.Text(tr("msg_error_prefix").format(str(ex)), color=col_white),
                             bgcolor=col_danger
                         )
                         page.snack_bar.open = True
@@ -2641,7 +2641,7 @@ def main(page: ft.Page):
             
             except Exception as ex:
                 page.snack_bar = ft.SnackBar(
-                    content=ft.Text(f"❌ Hata: {str(ex)}", color=col_white),
+                    content=ft.Text(tr("msg_error_prefix").format(str(ex)), color=col_white),
                     bgcolor=col_danger
                 )
                 page.snack_bar.open = True
@@ -2894,7 +2894,7 @@ def main(page: ft.Page):
                             success_dlg.open = True
                             page.update()
                         else:
-                            page.snack_bar = ft.SnackBar(content=ft.Text(f"❌ {msg}", color=col_white), bgcolor=col_danger)
+                            page.snack_bar = ft.SnackBar(content=ft.Text(tr("msg_error_prefix").format(msg), color=col_white), bgcolor=col_danger)
                             page.snack_bar.open = True
                             page.update()
 
@@ -2904,7 +2904,7 @@ def main(page: ft.Page):
                 save_file_picker.save_file(dialog_title="Yedek Dosyasını Kaydet", file_name=default_filename, allowed_extensions=["zip"])
                 
             except Exception as ex:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"❌ Yedekleme hatası: {str(ex)}", color=col_white), bgcolor=col_danger)
+                page.snack_bar = ft.SnackBar(content=ft.Text(tr("backup_error_prefix").format(str(ex)), color=col_white), bgcolor=col_danger)
                 page.snack_bar.open = True
                 page.update()
 
@@ -2921,7 +2921,7 @@ def main(page: ft.Page):
                 save_file_picker_invoices_excel.save_file(dialog_title="Excel Dosyasını Kaydet", file_name=filename, allowed_extensions=["xlsx"])
                     
             except Exception as ex:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"❌ Excel hatası: {str(ex)}", color=col_white), bgcolor=col_danger)
+                page.snack_bar = ft.SnackBar(content=ft.Text(tr("msg_excel_error_prefix").format(str(ex)), color=col_white), bgcolor=col_danger)
                 page.snack_bar.open = True
                 page.update()
 
@@ -2938,7 +2938,7 @@ def main(page: ft.Page):
                 save_file_picker_invoices_pdf.save_file(dialog_title="PDF Dosyasını Kaydet", file_name=filename, allowed_extensions=["pdf"])
                     
             except Exception as ex:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"❌ PDF hatası: {str(ex)}", color=col_white), bgcolor=col_danger)
+                page.snack_bar = ft.SnackBar(content=ft.Text(tr("msg_pdf_error_prefix").format(str(ex)), color=col_white), bgcolor=col_danger)
                 page.snack_bar.open = True
                 page.update()
 
@@ -3127,7 +3127,7 @@ def main(page: ft.Page):
         
         # Update button text
         lang_btn.text = "TR" if new_lang == "en" else "EN"
-        lang_btn.tooltip = "Türkçe" if new_lang == "en" else "English"
+        lang_btn.tooltip = tr("tooltip_lang_tr") if new_lang == "en" else tr("tooltip_lang_en")
         
         # Update tabs
         btn_home.text_control.value = tr("nav_home")
@@ -3161,7 +3161,7 @@ def main(page: ft.Page):
 
     lang_btn = ft.TextButton(
         text="EN", 
-        tooltip="English",
+        tooltip=tr("tooltip_lang_en"),
         on_click=toggle_language,
         style=ft.ButtonStyle(color="onSurfaceVariant")
     )
@@ -3337,7 +3337,11 @@ def main(page: ft.Page):
         # Kur bilgisi text'i dinamik olarak oluştur
         exchange_rate_text = ft.Text(get_exchange_rate_display(), size=13, color="onSurfaceVariant", weight="w600")
         
-        header = ft.Row([ft.Text(tr("dashboard_title"), size=26, weight="bold", color="onBackground"), ft.Row([ft.Container(bgcolor="secondaryContainer", padding=ft.padding.symmetric(horizontal=15, vertical=10), border_radius=8, content=ft.Row([ft.Icon("currency_exchange", size=16, color="primary"), exchange_rate_text], spacing=10)), currency_selector_container], spacing=20)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+        # Warning icon logic
+        show_warning = backend_instance.using_default_rates
+        rate_warning_icon = ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, color=col_danger, size=16, visible=show_warning, tooltip=tr("rate_warning_tooltip"))
+        
+        header = ft.Row([ft.Text(tr("dashboard_title"), size=26, weight="bold", color="onBackground"), ft.Row([ft.Container(bgcolor="secondaryContainer", padding=ft.padding.symmetric(horizontal=15, vertical=10), border_radius=8, content=ft.Row([ft.Icon("currency_exchange", size=16, color="primary"), exchange_rate_text, rate_warning_icon], spacing=10)), currency_selector_container], spacing=20)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
 
         

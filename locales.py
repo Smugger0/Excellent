@@ -2,17 +2,17 @@
 # -*- coding: utf-8 -*-
 
 """
-Localization module for Excellent App.
-Contains translation strings for supported languages.
+Excellent Uygulaması için Yerelleştirme Modülü.
+Desteklenen diller için çeviri metinlerini içerir.
 """
 
-# Default language
+# Varsayılan dil
 DEFAULT_LANGUAGE = "tr"
 
-# Translation dictionary
+# Çeviri sözlüğü
 TRANSLATIONS = {
     "tr": {
-        # General
+        # Genel
         "app_title": "Excellent",
         "app_subtitle": "with Rust",
         "warning": "Uyarı",
@@ -22,12 +22,12 @@ TRANSLATIONS = {
         "save": "Kaydet",
         "ok": "Tamam",
         
-        # Navigation
+        # Navigasyon
         "nav_home": "Giriş",
         "nav_invoices": "Faturalar",
         "nav_reports": "Raporlar",
         
-        # Dashboard
+        # Panel (Dashboard)
         "dashboard_title": "Genel Durum Paneli",
         "net_profit": "Anlık Net Kâr",
         "total_income": "Toplam Gelir",
@@ -37,7 +37,7 @@ TRANSLATIONS = {
         "performance_analysis": "Performans Analizi",
         "yearly_comparison": "Yıllık gelir ve gider karşılaştırması",
         
-        # Invoices
+        # Faturalar
         "invoices_title": "Fatura Yönetimi",
         "invoice_no": "Fatura No",
         "date": "Tarih",
@@ -54,17 +54,17 @@ TRANSLATIONS = {
         "incoming_invoices": "Gelen Faturalar (Gider)",
         "outgoing_invoices": "Giden Faturalar (Gelir)",
         
-        # Reports
+        # Raporlar
         "reports_title": "Dönemsel ve Yıllık Gelir",
         "export_excel": "Excel Olarak İndir",
         "export_pdf": "PDF Olarak İndir",
         
-        # Messages
+        # Mesajlar
         "app_already_running": "Excellent uygulaması zaten çalışıyor!",
         "backup_db": "Veritabanını Yedekle",
         "qr_scan": "QR Okuma / Klasör Ekle",
         
-        # New additions
+        # Yeni eklemeler
         "default_vat": "Varsayılan (%)20",
         "optional_tcmb": "Opsiyonel (TCMB)",
         "usd_rate_label": "USD Kuru (1 USD = ? TL)",
@@ -81,6 +81,7 @@ TRANSLATIONS = {
         "msg_select_one": "⚠️ Sadece bir fatura seçin!",
         "msg_invoice_updated": "✅ Fatura güncellendi!",
         "msg_update_error": "❌ Güncelleme başarısız!",
+        "msg_update_error_prefix": "❌ Güncelleme hatası: {}",
         "msg_select_to_delete": "⚠️ Lütfen silmek için en az bir fatura seçin!",
         "delete_confirm_title": "Silme Onayı",
         "delete_confirm_msg_multi": "Seçili {} faturayı silmek istediğinize emin misiniz?",
@@ -89,6 +90,7 @@ TRANSLATIONS = {
         "no": "Hayır",
         "msg_deleted_count": "✅ {} fatura silindi!",
         "msg_delete_error": "❌ Hiçbir fatura silinemedi!",
+        "msg_delete_error_prefix": "❌ Silme hatası: {}",
         
         "msg_expenses_saved": "✅ {} yılı genel giderleri kaydedildi!",
         "msg_save_error": "❌ Kaydetme işlemi başarısız!",
@@ -118,26 +120,33 @@ TRANSLATIONS = {
         "scanning_files": "📁 Dosyalar taranıyor...",
         "preparing_files": "🚀 {} dosya işlenmeye hazırlanıyor...",
         "qr_processing_complete": "✅ QR işleme tamamlandı!",
+        
+        "select_date_title": "Tarih Seçin",
+        "enter_date_label": "Tarih Girin:",
+        "go_to_date": "Tarihe Git",
+        "or_select_calendar": "veya Takvimden Seçin:",
+        "tooltip_lang_tr": "Türkçe",
+        "tooltip_lang_en": "English",
         "processing_progress": "İşleniyor: %{} ({}/{})",
         "entry_date": "Giriş: {}",
         "invoice_date": "Fatura Tarihi: {}",
         "rate_label": "Kur: {:.2f}",
+        "loading_rates": "Kur bilgisi yükleniyor...",
+        "converted_to_tl": "({} -> TL çevrildi)",
+        "rate_warning_tooltip": "Döviz kurları çekilemedi. İnternet bağlantınızı kontrol edip uygulamayı yeniden başlatın.",
         "select_invoice_type": "Fatura Tipi Seçin",
         "income_sales_invoice": "GELİR (Satış Faturası)",
         "expense_purchase_invoice": "GİDER (Alış Faturası)",
 
         "no_transactions": "Bu tarihte işlem bulunamadı.",
         "transactions_for_date": "{} tarihli işlemler",
-        "select_date_title": "Tarih Seçin",
-        "enter_date_label": "Tarih Girin:",
-        "go_to_date": "Tarihe Git",
-        "or_select_calendar": "veya Takvimden Seçin:",
         "latest_entries": "En Son Girilenler",
         "go_by_date": "Tarihe Göre Git",
         "income": "Gelir",
         "expense": "Gider",
         "update_available": "Güncelleme Mevcut",
         "col_quarter_total": "ÇEYREK TOPLAM",
+        "quarter_total": "ÇEYREK TOPLAM",
         "currency_tl": "TL",
         "currency_usd": "USD",
         "currency_eur": "EUR",
@@ -150,7 +159,7 @@ TRANSLATIONS = {
         "amount_hint": "0",
         "total_hint": "0.00",
         
-        # Table Headers
+        # Tablo Başlıkları
         "col_select": "SEÇ",
         "col_invoice_no": "FATURA NO",
         "col_date": "TARİH",
@@ -169,7 +178,7 @@ TRANSLATIONS = {
         "col_corp_tax": "KURUMLAR VERGİSİ",
         "col_tax_payable": "ÖDENECEK VERGİ (3 Aylık)",
         
-        # Months
+        # Aylar
         "month_jan": "OCAK",
         "month_feb": "ŞUBAT",
         "month_mar": "MART",
@@ -183,7 +192,7 @@ TRANSLATIONS = {
         "month_nov": "KASIM",
         "month_dec": "ARALIK",
         
-        # Days
+        # Günler
         "day_mon": "Pzt",
         "day_tue": "Sal",
         "day_wed": "Çar",
@@ -192,7 +201,7 @@ TRANSLATIONS = {
         "day_sat": "Cmt",
         "day_sun": "Paz",
         
-        # Operations
+        # İşlemler
         "op_deleted": "SİLİNDİ",
         "op_updated": "GÜNCELLENDİ",
         "op_income_added": "GELİR EKLENDİ",
@@ -217,7 +226,9 @@ TRANSLATIONS = {
         "backup_success_title": "Yedekleme Başarılı",
         "language_changed_msg": "Dil değiştirildi. Tam etki için sayfaları gezinin veya yeniden başlatın.",
         
-        # Hints
+        # İpuçları
+        "msg_enter_date": "Lütfen bir tarih girin",
+        "msg_invalid_date_format": "Geçersiz tarih! Örn: 121225 veya 12.12.2025",
         "hint_invoice_no": "FAT-2025...",
         "hint_date": "ggaayy veya gg.aa.yyyy (örn. 121225)",
         "hint_company": "Firma seçiniz...",
@@ -235,7 +246,7 @@ TRANSLATIONS = {
         "msg_qr_no_files": "❌ Klasörde işlenebilir dosya bulunamadı veya işlem başarısız!",
         "msg_no_invoices_export": "❌ Dışa aktarılacak fatura bulunamadı!",
         
-        # PDF Export
+        # PDF Dışa Aktarma
         "pdf_title_outgoing": "📈 GİDEN FATURALAR (GELİR) RAPORU",
         "pdf_title_incoming": "📉 GELEN FATURALAR (GİDER) RAPORU",
         "pdf_title_general": "📊 FATURA RAPORU",
@@ -252,14 +263,14 @@ TRANSLATIONS = {
         "summary_average": "Ortalama Fatura",
         "unit_type": "BİRİM",
         
-        # File Names
+        # Dosya İsimleri
         "filename_outgoing_invoices": "GelirFaturalari",
         "filename_incoming_invoices": "GiderFaturalari",
         "filename_general_expenses": "GenelGiderler",
         "filename_monthly_expenses": "GenelGiderler_Aylik",
         "filename_periodic_income": "DonemselGelir",
         
-        # Excel Export
+        # Excel Dışa Aktarma
         "excel_sheet_outgoing": "Giden Faturalar",
         "excel_sheet_incoming": "Gelen Faturalar",
         "excel_sheet_general_expenses": "Genel Giderler",
@@ -267,7 +278,7 @@ TRANSLATIONS = {
         "excel_col_description": "AÇIKLAMA",
         "excel_col_amount": "TUTAR",
         
-        # Months
+        # Aylar
         "month_1": "Ocak",
         "month_2": "Şubat",
         "month_3": "Mart",
@@ -281,7 +292,7 @@ TRANSLATIONS = {
         "month_11": "Kasım",
         "month_12": "Aralık",
         
-        # Monthly Report
+        # Aylık Raporlar
         "report_title_suffix": "Raporu",
         "col_months": "AYLAR",
         "col_income": "GELİR",
@@ -360,6 +371,7 @@ TRANSLATIONS = {
         "msg_select_one": "⚠️ Select only one invoice!",
         "msg_invoice_updated": "✅ Invoice updated!",
         "msg_update_error": "❌ Update failed!",
+        "msg_update_error_prefix": "❌ Update error: {}",
         "msg_select_to_delete": "⚠️ Please select at least one invoice to delete!",
         "delete_confirm_title": "Delete Confirmation",
         "delete_confirm_msg_multi": "Are you sure you want to delete {} selected invoices?",
@@ -368,6 +380,7 @@ TRANSLATIONS = {
         "no": "No",
         "msg_deleted_count": "✅ {} invoices deleted!",
         "msg_delete_error": "❌ No invoices could be deleted!",
+        "msg_delete_error_prefix": "❌ Delete error: {}",
         
         "msg_expenses_saved": "✅ {} general expenses saved!",
         "msg_save_error": "❌ Save failed!",
@@ -397,20 +410,26 @@ TRANSLATIONS = {
         "scanning_files": "📁 Scanning files...",
         "preparing_files": "🚀 Preparing to process {} files...",
         "qr_processing_complete": "✅ QR processing complete!",
+
+        "select_date_title": "Select Date",
+        "enter_date_label": "Enter Date:",
+        "go_to_date": "Go to Date",
+        "or_select_calendar": "or Select from Calendar:",
+        "tooltip_lang_tr": "Turkish",
+        "tooltip_lang_en": "English",
         "processing_progress": "Processing: %{} ({}/{})",
         "entry_date": "Entry: {}",
         "invoice_date": "Invoice Date: {}",
         "rate_label": "Rate: {:.2f}",
+        "loading_rates": "Loading exchange rates...",
+        "converted_to_tl": "({} -> converted to TL)",
+        "rate_warning_tooltip": "Exchange rates could not be fetched. Check your internet connection and restart the application.",
         "select_invoice_type": "Select Invoice Type",
         "income_sales_invoice": "INCOME (Sales Invoice)",
         "expense_purchase_invoice": "EXPENSE (Purchase Invoice)",
 
         "no_transactions": "No transactions found for this date.",
         "transactions_for_date": "Transactions for {}",
-        "select_date_title": "Select Date",
-        "enter_date_label": "Enter Date:",
-        "go_to_date": "Go to Date",
-        "or_select_calendar": "or Select from Calendar:",
         "latest_entries": "Latest Entries",
         "go_by_date": "Go by Date",
         "income": "Income",
@@ -500,6 +519,8 @@ TRANSLATIONS = {
         "msg_backup_error": "❌ {}",
         
         # Hints
+        "msg_enter_date": "Please enter a date",
+        "msg_invalid_date_format": "Invalid date! E.g. 121225 or 12.12.2025",
         "hint_invoice_no": "INV-2025...",
         "hint_date": "ddmmyy or dd.mm.yyyy (e.g. 121225)",
         "hint_company": "Select company...",
@@ -574,11 +595,11 @@ TRANSLATIONS = {
 
 def get_text(key, lang="tr"):
     """
-    Get translated text for the given key and language.
-    Returns the key itself if translation is missing.
+    Girilen anahtar ve dile göre çeviri metnini döndürür.
+    eğer çeviri bulunamazsa, anahtarı döndürür.
     """
     lang_dict = TRANSLATIONS.get(lang, TRANSLATIONS.get(DEFAULT_LANGUAGE))
     return lang_dict.get(key, key)
 
-# Alias for easier usage
+# Alias for easier usage // Daha kolay kullanım için takma ad
 tr = get_text
