@@ -250,8 +250,8 @@ class InvoiceProcessor:
                 eur_to_tl = (1 / eur_rate) if eur_rate > 0 else 0
                 logging.debug(f"   💱 Cache'den EUR kuru: 1 EUR = {eur_to_tl} TL")
 
-            # KDV DAHİL SİSTEM - Tüm girilen tutarlar KDV dahildir
-            # KDV hesaplaması her zaman TL üzerinden yapılır
+            # KDV HESAPLAMA - Girilen tutar tabloda aynı kalır, KDV ayrıca hesaplanır
+            # KDV = Girilen Tutar × KDV% (100 TL için %20 = 20 TL KDV)
             if toplam_tutar > 0:
                 try:
                     # Önce TL'ye çevir
@@ -269,44 +269,38 @@ class InvoiceProcessor:
                         else:
                             conversion_rate = Decimal(str(eur_to_tl))
                     
+                    # Girilen tutar olduğu gibi kalacak (toplam tutar)
                     toplam_tutar_tl_decimal = toplam_tutar * conversion_rate
                     
-                    # KDV dahil TL tutardan matrahı ve KDV tutarını hesapla (Decimal ile)
-                    kdv_katsayisi = Decimal('1') + (kdv_yuzdesi / Decimal('100'))
-                    
-                    if kdv_katsayisi == 0:
-                        matrah_tl = toplam_tutar_tl_decimal
-                        kdv_tutari_tl = Decimal('0')
-                    else:
-                        matrah_tl = toplam_tutar_tl_decimal / kdv_katsayisi
-                        kdv_tutari_tl = toplam_tutar_tl_decimal - matrah_tl
+                    # KDV tutarını girilen tutar üzerinden hesapla (KDV = Tutar * KDV%)
+                    # 100 TL girildi → KDV = 100 × 0.20 = 20 TL
+                    kdv_tutari_tl = toplam_tutar_tl_decimal * (kdv_yuzdesi / Decimal('100'))
                     
                     # 5 ondalık basamağa yuvarla
-                    matrah_tl = matrah_tl.quantize(Decimal('0.00001'))
+                    toplam_tutar_tl_decimal = toplam_tutar_tl_decimal.quantize(Decimal('0.00001'))
                     kdv_tutari_tl = kdv_tutari_tl.quantize(Decimal('0.00001'))
                     
-                    logging.debug(f"   ✅ KDV DAHİL HESAPLAMA (TL ÜZERİNDEN):")
+                    logging.debug(f"   ✅ KDV HESAPLAMA:")
                     logging.debug(f"     - Girilen Tutar: {toplam_tutar} {birim}")
                     logging.debug(f"     - Kur: {conversion_rate}")
-                    logging.debug(f"     - TL Karşılığı: {toplam_tutar_tl_decimal} TL")
-                    logging.debug(f"     - KDV Katsayısı: {kdv_katsayisi}")
-                    logging.debug(f"     - Matrah (TL): {matrah_tl} TL")
+                    logging.debug(f"     - Toplam Tutar (TL): {toplam_tutar_tl_decimal} TL")
+                    logging.debug(f"     - KDV Oranı: %{kdv_yuzdesi}")
                     logging.debug(f"     - KDV Tutarı (TL): {kdv_tutari_tl} TL")
                     
                 except Exception as calc_err:
                     logging.error(f"   ❌ Hesaplama hatası (Decimal): {calc_err}")
                     # Hata durumunda varsayılan değerler
-                    matrah_tl = Decimal('0')
-                    kdv_tutari_tl = Decimal('0')
                     toplam_tutar_tl_decimal = Decimal('0')
+                    kdv_tutari_tl = Decimal('0')
                     
             else:
                 logging.error(f"   ❌ HATA: Toplam tutar girilmemiş!")
                 return None
             
-            toplam_kdv_dahil_tl = matrah_tl + kdv_tutari_tl
+            # Toplam tutar girilen değer olarak kalır (artırılmaz)
+            toplam_kdv_dahil_tl = toplam_tutar_tl_decimal
 
-            # Sonuç verilerini hazırla - toplam_tutar_tl artık KDV DAHİL tutar
+            # Sonuç verilerini hazırla - toplam_tutar_tl girilen tutar olarak kalır
             # Tüm tutarları 5 ondalık basamağa yuvarla
             processed['toplam_tutar_tl'] = round(float(toplam_kdv_dahil_tl), 5)
             
