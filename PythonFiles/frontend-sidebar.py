@@ -13,6 +13,9 @@ from imports import (
     win32event, win32api, winerror, ctypes, traceback
 )
 
+# Define project root
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 # Windows görev çubuğu simgesi için AppUserModelID ayarla (en başta yapılmalı)
 try:
     myappid = 'excellent.dashboard.app.1.0'
@@ -96,8 +99,8 @@ state = {
     "invoice_sort_option": "newest",
     "animation_completed": False,
     "current_language": "tr",
-    "excel_export_path": os.path.join(os.getcwd(), "ExcelReports"),
-    "pdf_export_path": os.path.join(os.getcwd(), "PDFExports"),
+    "excel_export_path": os.path.join(PROJECT_ROOT, "ExcelReports"),
+    "pdf_export_path": os.path.join(PROJECT_ROOT, "PDFExports"),
     # Dinamik güncelleme için referanslar (Sayfalar arası iletişim)
     "update_callbacks": {
         "home_page": None,
@@ -119,7 +122,8 @@ def resource_path(relative_path):
         # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(".")
+        # PythonFiles klasöründen bir üst dizine (root) çık
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
     return os.path.join(base_path, relative_path)
 
@@ -135,31 +139,75 @@ def process_invoice(invoice_data):
     """Fatura verilerini işle ve KDV hesapla"""
     return backend_instance.invoice_processor.process_invoice_data(invoice_data)
 
-def format_currency(amount, currency="TRY", compact=False):
-    """Para birimi formatla - compact=True ise K/M formatında göster"""
+def format_currency(amount, currency="TRY", compact=False, target_currency=None):
+    """Para birimi formatla - compact=True ise K/M formatında göster
+    
+    Args:
+        amount: Tutar
+        currency: Tutarın mevcut birimi (TL/TRY, USD, EUR)
+        compact: True ise K/M formatında göster
+        target_currency: Hedef birim (None ise currency kullanılır, dönüşüm yapar)
+    """
+    # Currency normalizasyonu
+    if currency == "TL":
+        currency = "TRY"
+    if target_currency == "TL":
+        target_currency = "TRY"
+    
+    # Hedef birim belirtilmemişse kaynak birimle aynı
+    if target_currency is None:
+        target_currency = currency
+    
+    # Döviz dönüştürme
+    converted_amount = amount
+    if currency != target_currency:
+        rates = get_exchange_rates()
+        
+        # TL'den hedef birime
+        if currency == "TRY":
+            if target_currency == "USD":
+                converted_amount = amount * rates.get('USD', 1)
+            elif target_currency == "EUR":
+                converted_amount = amount * rates.get('EUR', 1)
+        # USD'den
+        elif currency == "USD":
+            if target_currency == "TRY":
+                converted_amount = amount / rates.get('USD', 1) if rates.get('USD', 0) > 0 else amount
+            elif target_currency == "EUR":
+                usd_to_tl = amount / rates.get('USD', 1) if rates.get('USD', 0) > 0 else amount
+                converted_amount = usd_to_tl * rates.get('EUR', 1)
+        # EUR'den
+        elif currency == "EUR":
+            if target_currency == "TRY":
+                converted_amount = amount / rates.get('EUR', 1) if rates.get('EUR', 0) > 0 else amount
+            elif target_currency == "USD":
+                eur_to_tl = amount / rates.get('EUR', 1) if rates.get('EUR', 0) > 0 else amount
+                converted_amount = eur_to_tl * rates.get('USD', 1)
+    
+    # Sembol belirleme
     symbol = "₺"
-    if currency == "USD":
+    if target_currency == "USD":
         symbol = "$"
-    elif currency == "EUR":
+    elif target_currency == "EUR":
         symbol = "€"
         
     if compact:
         # Kompakt format (K/M ile)
-        if amount >= 1000000:
-            return f"{symbol} {amount/1000000:.1f}M"
-        elif amount >= 1000:
-            return f"{symbol} {amount/1000:.1f}K"
+        if converted_amount >= 1000000:
+            return f"{symbol} {converted_amount/1000000:.1f}M"
+        elif converted_amount >= 1000:
+            return f"{symbol} {converted_amount/1000:.1f}K"
         else:
-            return f"{symbol} {amount:.0f}"
+            return f"{symbol} {converted_amount:.0f}"
     
-    # Normal format
-    if currency == "TRY":
-        return f"{amount:,.2f} ₺"
-    elif currency == "USD":
-        return f"${amount:,.2f}"
-    elif currency == "EUR":
-        return f"€{amount:,.2f}"
-    return f"{amount:,.2f} {currency}"
+    # Normal format - büyük sayılar için binlik ayracı
+    if target_currency == "TRY":
+        return f"{converted_amount:,.2f} ₺"
+    elif target_currency == "USD":
+        return f"${converted_amount:,.2f}"
+    elif target_currency == "EUR":
+        return f"€{converted_amount:,.2f}"
+    return f"{converted_amount:,.2f} {target_currency}"
 
 def get_exchange_rate_display():
     """Kur bilgilerini string olarak döndür"""
@@ -386,17 +434,30 @@ def create_invoice_table_content(sort_option="newest", invoice_type="income", on
                 usd_rate_val = float(usd_rate) if usd_rate is not None else 0.0
                 eur_rate_val = float(eur_rate) if eur_rate is not None else 0.0
                 
-                # Tutar görüntüleme - kur bilgisi ile
-                tutar_usd = float(inv.get('toplam_tutar_usd', 0) or 0)
-                tutar_eur = float(inv.get('toplam_tutar_eur', 0) or 0)
-                
-                usd_display = f"{tutar_usd:,.2f}"
-                eur_display = f"{tutar_eur:,.2f}"
-                
                 # KDV hesaplama
                 kdv_tutari = float(inv.get('kdv_tutari', 0))
                 kdv_yuzdesi = float(inv.get('kdv_yuzdesi', 0))
                 kdv_text = f"{kdv_tutari:,.2f} (%{kdv_yuzdesi:.0f})"
+                
+                # Matrah (Base Amount) hesaplama
+                matrah = float(inv.get('matrah', 0) or 0)
+                toplam_tl = float(inv.get('toplam_tutar_tl', 0) or 0)
+                
+                # Eski kayıtlar için fallback: Matrah yoksa Toplam - KDV
+                if matrah <= 0 and toplam_tl > 0:
+                    matrah = toplam_tl - kdv_tutari
+
+                # Döviz bazlı matrah hesaplama
+                base_usd = 0.0
+                if usd_rate_val > 0:
+                    base_usd = matrah / usd_rate_val
+                
+                base_eur = 0.0
+                if eur_rate_val > 0:
+                    base_eur = matrah / eur_rate_val
+                
+                usd_display = f"{base_usd:,.2f}"
+                eur_display = f"{base_eur:,.2f}"
 
                 def create_currency_cell(amount_text, rate_val):
                     if rate_val > 0:
@@ -418,7 +479,7 @@ def create_invoice_table_content(sort_option="newest", invoice_type="income", on
                         cell(inv.get('firma', '')),
                         cell(inv.get('malzeme', '')),
                         cell(inv.get('miktar', '')),
-                        ft.DataCell(ft.Text(f"{float(inv.get('toplam_tutar_tl', 0)):,.2f}", size=12, color="onBackground", weight="bold")),
+                        ft.DataCell(ft.Text(f"{matrah:,.2f}", size=12, color="onBackground", weight="bold")),
                         create_currency_cell(usd_display, usd_rate_val),
                         create_currency_cell(eur_display, eur_rate_val),
                         cell(kdv_text)
@@ -504,7 +565,9 @@ def create_donemsel_table(year=None, tax_fields=None, on_tax_change=None):
                 if invoice_year == year:
                     amount_tl = float(invoice.get('toplam_tutar_tl', 0))
                     kdv_tl = float(invoice.get('kdv_tutari', 0))
-                    monthly_income[month-1] += amount_tl
+                    # Matrah üzerinden hesaplama yap (Toplam - KDV)
+                    matrah_tl = amount_tl - kdv_tl
+                    monthly_income[month-1] += matrah_tl
                     monthly_income_kdv[month-1] += kdv_tl
             except (ValueError, IndexError):
                 continue
@@ -524,7 +587,9 @@ def create_donemsel_table(year=None, tax_fields=None, on_tax_change=None):
                 if invoice_year == year:
                     amount_tl = float(invoice.get('toplam_tutar_tl', 0))
                     kdv_tl = float(invoice.get('kdv_tutari', 0))
-                    monthly_expense[month-1] += amount_tl
+                    # Matrah üzerinden hesaplama yap (Toplam - KDV)
+                    matrah_tl = amount_tl - kdv_tl
+                    monthly_expense[month-1] += matrah_tl
                     monthly_expense_kdv[month-1] += kdv_tl
             except (ValueError, IndexError):
                 continue
@@ -1114,7 +1179,7 @@ class DonutStatCard(ft.Container):
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
 class TransactionRow(ft.Container):
-    def __init__(self, title, date, amount, is_income=True, is_updated=False, is_deleted=False, invoice_date=None, operation_type="EKLEME"):
+    def __init__(self, title, date, amount, is_income=True, is_updated=False, is_deleted=False, invoice_date=None, operation_type="EKLEME", currency="TL", current_currency="TL"):
         super().__init__()
         self.padding = ft.padding.all(10)
         self.border_radius = 12
@@ -1130,7 +1195,7 @@ class TransactionRow(ft.Container):
             op_text = tr("op_deleted")
             amount_color = "onSurfaceVariant"
         elif is_updated or operation_type == "GÜNCELLEME":
-            icon_name = ft.Icons.EDIT_OUTLINE
+            icon_name = ft.Icons.EDIT
             icon_color = "primary" # Mavi
             bg_color = "primaryContainer"
             op_text = tr("op_updated")
@@ -1181,11 +1246,20 @@ class TransactionRow(ft.Container):
         text_decoration = ft.TextDecoration.LINE_THROUGH if is_deleted else ft.TextDecoration.NONE
         title_color = "onSurfaceVariant" if is_deleted else "onSurface"
         
-        # Tutar Metni
+        # Tutar Metni - Döviz dönüştürme ve formatlama
         sign = "+" if is_income and not is_deleted else ("-" if not is_income and not is_deleted else "")
         
+        # Tutarı float'a çevir
+        try:
+            amount_value = float(str(amount).replace(',', '.'))
+        except:
+            amount_value = 0.0
+        
+        # format_currency kullanarak tutarı formatla (büyük sayılar için compact)
+        formatted_amount = format_currency(amount_value, currency=currency, target_currency=current_currency, compact=False)
+        
         amount_text = ft.Text(
-            f"{sign}{amount}",
+            f"{sign}{formatted_amount}",
             size=14,
             weight="bold",
             color=amount_color,
@@ -1745,7 +1819,11 @@ def main(page: ft.Page):
             # 7. Donut grafikleri güncelle - seçili yıla göre
             update_donuts_for_year(selected_year)
             
-            # 7. Sayfayı güncelle
+            # 8. İşlem geçmişini güncelle (döviz değişikliği için)
+            if "transaction_history" in state["update_callbacks"]:
+                state["update_callbacks"]["transaction_history"]()
+            
+            # 9. Sayfayı güncelle
             try:
                 page.update()
             except:
@@ -2316,24 +2394,46 @@ def main(page: ft.Page):
                             birim = str(invoice.get('birim', 'TL'))
                             input_para_birimi.value = birim
                             
-                            if birim == 'TL':
-                                tutar = round(float(invoice.get('toplam_tutar_tl', 0)), 5)
-                            elif birim == 'USD':
-                                tutar = round(float(invoice.get('toplam_tutar_usd', 0)), 5)
-                            elif birim == 'EUR':
-                                tutar = round(float(invoice.get('toplam_tutar_eur', 0)), 5)
-                            else:
-                                tutar = round(float(invoice.get('toplam_tutar_tl', 0)), 5)
+                            # Matrah alanını kullan (yeni sistem)
+                            matrah = invoice.get('matrah', 0)
+                            kdv_yuzdesi = float(invoice.get('kdv_yuzdesi', 20.0))
+                            usd_rate = float(invoice.get('usd_rate', 0))
+                            eur_rate = float(invoice.get('eur_rate', 0))
                             
-                            input_tutar.value = str(tutar) if tutar else '0'
-                            input_kdv.value = str(round(float(invoice.get('kdv_yuzdesi', 20.0)), 5))
+                            if matrah and matrah > 0:
+                                # Veritabanında matrah varsa direkt kullan
+                                input_tutar.value = str(round(float(matrah), 5))
+                            else:
+                                # Eski faturalar için geriye dönük uyumluluk
+                                # Toplam tutardan KDV çıkararak matrahı hesapla
+                                kdv_tutari_tl = float(invoice.get('kdv_tutari', 0))
+                                
+                                if birim == 'TL':
+                                    toplam_tutar = round(float(invoice.get('toplam_tutar_tl', 0)), 5)
+                                    tutar = toplam_tutar - kdv_tutari_tl
+                                elif birim == 'USD':
+                                    toplam_tutar = round(float(invoice.get('toplam_tutar_usd', 0)), 5)
+                                    if usd_rate > 0:
+                                        tutar = toplam_tutar - (kdv_tutari_tl / usd_rate)
+                                    else:
+                                        tutar = toplam_tutar / (1 + kdv_yuzdesi/100)
+                                elif birim == 'EUR':
+                                    toplam_tutar = round(float(invoice.get('toplam_tutar_eur', 0)), 5)
+                                    if eur_rate > 0:
+                                        tutar = toplam_tutar - (kdv_tutari_tl / eur_rate)
+                                    else:
+                                        tutar = toplam_tutar / (1 + kdv_yuzdesi/100)
+                                else:
+                                    toplam_tutar = round(float(invoice.get('toplam_tutar_tl', 0)), 5)
+                                    tutar = toplam_tutar - kdv_tutari_tl
+                                
+                                input_tutar.value = str(round(tutar, 5)) if tutar else '0'
+                            
+                            input_kdv.value = str(round(kdv_yuzdesi, 5))
                             
                             # Manuel döviz kurlarını doldur (varsa)
-                            usd_rate = round(float(invoice.get('usd_rate', 0)), 5)
-                            eur_rate = round(float(invoice.get('eur_rate', 0)), 5)
-                            
-                            input_usd_kur.value = str(usd_rate) if usd_rate and usd_rate > 0 else ''
-                            input_eur_kur.value = str(eur_rate) if eur_rate and eur_rate > 0 else ''
+                            input_usd_kur.value = str(round(usd_rate, 5)) if usd_rate and usd_rate > 0 else ''
+                            input_eur_kur.value = str(round(eur_rate, 5)) if eur_rate and eur_rate > 0 else ''
                     else:
                         selected_count_text.value = ""
                         selected_count_text.visible = False
@@ -2477,7 +2577,9 @@ def main(page: ft.Page):
                     # Backend'e kaydet
                     invoice_type = 'incoming' if state["invoice_type"] == "expense" else 'outgoing'
                     
-                    result = backend_instance.handle_invoice_operation('add', invoice_type, processed_data)
+                    # DÜZELTME: processed_data yerine invoice_data gönderiyoruz çünkü backend zaten işliyor.
+                    # processed_data gönderilirse backend tekrar KDV ekliyor (çifte vergilendirme).
+                    result = backend_instance.handle_invoice_operation('add', invoice_type, invoice_data)
                     
                     if result:
                         # Başarılı - tabloyu güncelle
@@ -2565,7 +2667,8 @@ def main(page: ft.Page):
                     invoice_id = invoice_data_from_row.get('id') if isinstance(invoice_data_from_row, dict) else invoice_data_from_row
                     invoice_type = 'incoming' if state["invoice_type"] == "expense" else 'outgoing'
                     
-                    result = backend_instance.handle_invoice_operation('update', invoice_type, processed_data, record_id=invoice_id)
+                    # DÜZELTME: processed_data yerine invoice_data gönderiyoruz
+                    result = backend_instance.handle_invoice_operation('update', invoice_type, invoice_data, record_id=invoice_id)
                     
                     if result:
                         # Tabloyu yenile - invoice type'a göre
@@ -2961,7 +3064,7 @@ def main(page: ft.Page):
             """Veritabanını yedekle"""
             try:
                 from backup import LocalBackupManager
-                manager = LocalBackupManager()
+                manager = LocalBackupManager(database_folder=os.path.join(PROJECT_ROOT, "Database"))
                 default_filename = manager.get_default_filename()
                 
                 def on_save_result(e: ft.FilePickerResultEvent):
@@ -3489,10 +3592,19 @@ def main(page: ft.Page):
             if firma_match:
                 title = firma_match.group(1)
             
-            # Tutar
-            amount_match = re.search(r'Tutar:\s*([\d\.,]+)', details)
+            # Tutar ve Birim
+            amount_str = "0.00"
+            currency = "TL"
+            amount_match = re.search(r'Tutar:\s*([\d\.,]+)\|(\w+)', details)
             if amount_match:
                 amount_str = amount_match.group(1)
+                currency = amount_match.group(2)
+            else:
+                # Eski format için fallback (Tutar: 100 TL)
+                old_format = re.search(r'Tutar:\s*([\d\.,]+)(?:\s*(TL|USD|EUR))?', details)
+                if old_format:
+                    amount_str = old_format.group(1)
+                    currency = old_format.group(2) if old_format.group(2) else "TL"
             
             # Fatura Tarihi
             date_match = re.search(r'Tarih:\s*([\d\.]+)', details)
@@ -3504,6 +3616,7 @@ def main(page: ft.Page):
                 'display_date': display_date,
                 'invoice_date': invoice_date,
                 'amount': amount_str,
+                'currency': currency,  # Birim bilgisi eklendi
                 'income': is_income,
                 'is_updated': is_updated,
                 'is_deleted': is_deleted,
@@ -3522,6 +3635,9 @@ def main(page: ft.Page):
     def update_transactions(filter_date=None):
         """Geçmiş işlemleri günceller - filtre varsa veritabanından çeker"""
         nonlocal current_filter_date
+        
+        # Aktif döviz birimini al
+        current_currency = state.get("current_currency", "TRY")
         
         # Eğer parametre verilmediyse, mevcut filtreyi kullan
         if filter_date is None and current_filter_date is not None:
@@ -3573,7 +3689,9 @@ def main(page: ft.Page):
                         is_updated=t.get("is_updated", False),
                         is_deleted=t.get("is_deleted", False),
                         invoice_date=t.get("invoice_date"),
-                        operation_type=t.get("operation_type", "EKLEME")
+                        operation_type=t.get("operation_type", "EKLEME"),
+                        currency=t.get("currency", "TL"),
+                        current_currency=current_currency  # Aktif döviz birimi
                     )
                 )
         

@@ -1,17 +1,17 @@
 [package]
 name = "rust_db"
 version = "1.2.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "rust_db"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.21", features = ["extension-module"] }
-pyo3-asyncio-0-21 = { version = "0.21", features = ["tokio-runtime"] }
+pyo3 = { version = "0.27", features = ["extension-module"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "macros"] }
 tokio = { version = "1", features = ["full"] }
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
+chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-chrono = "0.4"
+futures = "0.3"

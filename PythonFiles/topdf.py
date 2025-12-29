@@ -310,17 +310,18 @@ class InvoicePDFExporter:
             # KDV bilgileri
             kdv_tutari = float(invoice.get('kdv_tutari', 0) or 0)
             kdv_yuzdesi = float(invoice.get('kdv_yuzdesi', 0) or 0)
-            toplam_tutar_tl = float(invoice.get('toplam_tutar_tl', 0) or 0)
+            # MATRAH (KDV hariç) - toplam_tutar_tl yerine matrah kullan
+            matrah_tl = float(invoice.get('matrah', 0) or invoice.get('toplam_tutar_tl', 0) or 0)
             
-            # USD ve EUR tutarları
-            usd_amount = float(invoice.get('toplam_tutar_usd', 0) or 0)
-            eur_amount = float(invoice.get('toplam_tutar_eur', 0) or 0)
-            
-            # Kur bilgileri
+            # USD ve EUR tutarları - matrah üzerinden hesapla
             usd_rate = invoice.get('usd_rate')
             eur_rate = invoice.get('eur_rate')
             usd_rate_val = float(usd_rate) if usd_rate is not None else 0.0
             eur_rate_val = float(eur_rate) if eur_rate is not None else 0.0
+            
+            # Matrahı USD ve EUR'ya çevir
+            usd_amount = (matrah_tl / usd_rate_val) if usd_rate_val > 0 else 0.0
+            eur_amount = (matrah_tl / eur_rate_val) if eur_rate_val > 0 else 0.0
             
             # Formatlı metinler (Frontend ile uyumlu)
             # PDF'de yer kazanmak için alt satıra geçebiliriz
@@ -340,9 +341,9 @@ class InvoicePDFExporter:
                 firma_para,                                        # FIRMA
                 malzeme_para,                                      # MALZEME
                 str(invoice.get('miktar', '')),                    # MIKTAR
-                f"{toplam_tutar_tl:,.2f}",                        # TUTAR (TL)
-                usd_text,                                         # TUTAR (USD)
-                eur_text,                                         # TUTAR (EUR)
+                f"{matrah_tl:,.2f}",                              # MATRAH (TL) - KDV hariç
+                usd_text,                                         # MATRAH (USD)
+                eur_text,                                         # MATRAH (EUR)
                 kdv_text                                          # KDV (Tutar/%)
             ]
             
@@ -411,29 +412,25 @@ class InvoicePDFExporter:
                                      ParagraphStyle('SummaryTitle', fontName=turkish_font_bold, 
                                                   fontSize=10, alignment=1, spaceAfter=10)))
         
-        # Finansal özetler hesapla
-        total_tl = sum(float(inv.get('toplam_tutar_tl', 0) or 0) for inv in invoice_data)
+        # Finansal özetler hesapla - MATRAH (KDV hariç) kullan
+        total_tl = sum(float(inv.get('matrah', 0) or inv.get('toplam_tutar_tl', 0) or 0) for inv in invoice_data)
         total_kdv = sum(float(inv.get('kdv_tutari', 0) or 0) for inv in invoice_data)
         count = len(invoice_data)
         average_tl = total_tl / count if count > 0 else 0
         
-        # USD ve EUR toplamları
+        # USD ve EUR toplamları - matrah üzerinden
         total_usd = 0
         total_eur = 0
         for inv in invoice_data:
-            usd_amount = inv.get('toplam_tutar_usd', 0) or 0
-            eur_amount = inv.get('toplam_tutar_eur', 0) or 0
+            matrah = float(inv.get('matrah', 0) or inv.get('toplam_tutar_tl', 0) or 0)
+            usd_rate = float(inv.get('usd_rate', 0) or 0)
+            eur_rate = float(inv.get('eur_rate', 0) or 0)
             
-            # Eğer USD/EUR yoksa TL'den hesapla
-            if usd_amount == 0:
-                tl_amount = float(inv.get('toplam_tutar_tl', 0) or 0)
-                usd_amount = tl_amount / 42.44 if tl_amount > 0 else 0
-            if eur_amount == 0:
-                tl_amount = float(inv.get('toplam_tutar_tl', 0) or 0)
-                eur_amount = tl_amount / 48.93 if tl_amount > 0 else 0
-                
-            total_usd += usd_amount
-            total_eur += eur_amount
+            # Matrahı USD ve EUR'ya çevir
+            if usd_rate > 0:
+                total_usd += matrah / usd_rate
+            if eur_rate > 0:
+                total_eur += matrah / eur_rate
         
         # Özet tablosu verisi
         summary_data = [
@@ -597,21 +594,21 @@ class InvoicePDFExporter:
 
     def _create_summary_section(self, invoice_data, lang='tr'):
         """Özet bölümü oluştur"""
-        # Toplamları hesapla
+        # Toplamları hesapla - MATRAH (KDV hariç) kullan
         total_count = len(invoice_data)
-        total_amount = sum(float(inv.get('toplam_tutar_tl', 0) or 0) for inv in invoice_data)
+        total_matrah = sum(float(inv.get('matrah', 0) or inv.get('toplam_tutar_tl', 0) or 0) for inv in invoice_data)
         total_kdv = sum(float(inv.get('kdv_tutari', 0) or 0) for inv in invoice_data)
-        total_matrah = total_amount - total_kdv
+        total_amount = total_matrah + total_kdv
         
-        # Para birimlerine göre dağılım
+        # Para birimlerine göre dağılım - matrah üzerinden
         currency_breakdown = {}
         for inv in invoice_data:
             birim = inv.get('birim', 'TL')
-            amount = float(inv.get('toplam_tutar_tl', 0) or 0)
+            matrah = float(inv.get('matrah', 0) or inv.get('toplam_tutar_tl', 0) or 0)
             if birim in currency_breakdown:
-                currency_breakdown[birim] += amount
+                currency_breakdown[birim] += matrah
             else:
-                currency_breakdown[birim] = amount
+                currency_breakdown[birim] = matrah
         
         # Özet tablosu
         summary_data = [

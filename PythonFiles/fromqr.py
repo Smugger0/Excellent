@@ -17,12 +17,12 @@ from locales import get_text as tr
 #----- RUST ENTEGRASYONU ------
 # Performans kritik işlemler için Rust modülü kullanılır.
 try:
-    import rust_qr_backend
+    import rust_qr
     RUST_AVAILABLE = True
 except ImportError:
     RUST_AVAILABLE = False
     import warnings
-    warnings.warn("UYARI: 'rust_qr_backend' modülü bulunamadı. Performans düşebilir.", ImportWarning)
+    warnings.warn("UYARI: 'rust_qr' modülü bulunamadı. Performans düşebilir.", ImportWarning)
 # -----------------------------
 
 
@@ -65,10 +65,10 @@ class OptimizedQRProcessor:
         
         try:
             # Rust modülüne ham pikselleri gönder (GIL release edilmiş durumda çalışır)
-            raw_qr = rust_qr_backend.scan_raw_luma(raw_data, width, height)
+            raw_qr = rust_qr.scan_raw_luma(raw_data, width, height)
             
             if raw_qr:
-                cleaned = rust_qr_backend.clean_json_string(raw_qr)
+                cleaned = rust_qr.clean_json_string(raw_qr)
                 try:
                     return json.loads(cleaned)
                 except json.JSONDecodeError:
@@ -348,11 +348,11 @@ class OptimizedQRProcessor:
             height = pix.height
             
             # 4. Rust'taki YENİ fonksiyonu çağır
-            qr_string = rust_qr_backend.scan_raw_luma(raw_data, width, height)
+            qr_string = rust_qr.scan_raw_luma(raw_data, width, height)
             
             if qr_string:
                 # JSON Temizliği
-                cleaned = rust_qr_backend.clean_json_string(qr_string)
+                cleaned = rust_qr.clean_json_string(qr_string)
                 try:
                     json_data = json.loads(cleaned)
                     logging.debug(f"   ✅ Rust (RAW) ile bulundu ({stage_name} - {dpi} DPI)")
@@ -374,10 +374,10 @@ class OptimizedQRProcessor:
             return None
         
         try:
-            qr_string = rust_qr_backend.scan_image_bytes(img_bytes)
+            qr_string = rust_qr.scan_image_bytes(img_bytes)
             
             if qr_string:
-                cleaned = rust_qr_backend.clean_json_string(qr_string)
+                cleaned = rust_qr.clean_json_string(qr_string)
                 try:
                     return json.loads(cleaned)
                 except json.JSONDecodeError:
@@ -421,7 +421,7 @@ class OptimizedQRProcessor:
             try:
                 # Rust'ın temizleme fonksiyonunu kullan
                 if RUST_AVAILABLE:
-                    cleaned = rust_qr_backend.clean_json_string(qr_data)
+                    cleaned = rust_qr.clean_json_string(qr_data)
                 else:
                     cleaned = qr_data.replace("'", '"')
                 
@@ -1132,10 +1132,11 @@ class OptimizedQRProcessor:
                         'firma': firma or 'Bilinmeyen Firma',
                         'tip': malzeme or 'Fatura',
                         'miktar': miktar or '',
-                        'payableAmount': amounts['toplam'],
+                        'payableAmount': amounts['matrah'],  # MATRAH (KDV hariç fiyat)
                         'taxableAmount': amounts['matrah'],
                         'hesaplanankdv': amounts['kdv'],
                         'kdvOrani': amounts['kdv_yuzdesi'],
+                        'toplamTutar': amounts['toplam'],  # KDV dahil toplam (referans için)
                         'currency': currency_code,
                         '_source': 'PDF_TEXT_EXTRACTION'
                     }

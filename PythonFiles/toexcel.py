@@ -19,7 +19,9 @@ class InvoiceExcelExporter:
     """
     
     def __init__(self):
-        self.excel_folder = "ExcelReports"
+        # Define project root
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        self.excel_folder = os.path.join(project_root, "ExcelReports")
         # Klasör oluşturma işlemi artık ana uygulamada yapılıyor
         # if not os.path.exists(self.excel_folder):
         #     os.makedirs(self.excel_folder)
@@ -154,17 +156,24 @@ class InvoiceExcelExporter:
             eur_rate_val = float(eur_rate) if eur_rate is not None else 0.0
             
             # Tutarları al
-            tutar_tl = float(invoice.get('toplam_tutar_tl', 0) or 0)
-            tutar_usd = float(invoice.get('toplam_tutar_usd', 0) or 0)
-            tutar_eur = float(invoice.get('toplam_tutar_eur', 0) or 0)
+            # Matrah (KDV hariç tutar)
+            matrah_tl = float(invoice.get('matrah', 0) or invoice.get('toplam_tutar_tl', 0) or 0)
+            
+            # USD ve EUR kur bilgileri
+            usd_rate = float(invoice.get('usd_rate', 0) or 0)
+            eur_rate = float(invoice.get('eur_rate', 0) or 0)
+            
+            # Matrahı USD ve EUR'ya çevir
+            matrah_usd = (matrah_tl / usd_rate) if usd_rate > 0 else 0.0
+            matrah_eur = (matrah_tl / eur_rate) if eur_rate > 0 else 0.0
             
             # KDV bilgileri
             kdv_tutari = float(invoice.get('kdv_tutari', 0) or 0)
             kdv_yuzdesi = float(invoice.get('kdv_yuzdesi', 0) or 0)
             
-            # Formatlı metinler (Frontend ile uyumlu)
-            usd_text = f"{tutar_usd:,.2f}" if usd_rate_val == 0 else f"{tutar_usd:,.2f} ({usd_rate_val:.2f} {tr('currency_tl', lang)})"
-            eur_text = f"{tutar_eur:,.2f}" if eur_rate_val == 0 else f"{tutar_eur:,.2f} ({eur_rate_val:.2f} {tr('currency_tl', lang)})"
+            # Formatlı metinler (Frontend ile uyumlu) - matrah kullan
+            usd_text = f"{matrah_usd:,.2f}" if usd_rate_val == 0 else f"{matrah_usd:,.2f} ({usd_rate_val:.2f} {tr('currency_tl', lang)})"
+            eur_text = f"{matrah_eur:,.2f}" if eur_rate_val == 0 else f"{matrah_eur:,.2f} ({eur_rate_val:.2f} {tr('currency_tl', lang)})"
             kdv_text = f"{kdv_tutari:,.2f} (%{kdv_yuzdesi:.0f})"
             
             row = {
@@ -173,7 +182,7 @@ class InvoiceExcelExporter:
                 tr('col_company', lang): invoice.get('firma', ''),
                 tr('col_item', lang): invoice.get('malzeme', ''),
                 tr('col_amount', lang): invoice.get('miktar', ''),
-                tr('col_total_tl', lang): tutar_tl,
+                tr('col_total_tl', lang): matrah_tl,  # MATRAH (KDV hariç)
                 tr('col_total_usd', lang): usd_text,
                 tr('col_total_eur', lang): eur_text,
                 tr('col_vat', lang): kdv_text

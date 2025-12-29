@@ -203,9 +203,9 @@ class InvoiceProcessor:
             kdv_tutari_input = self._to_decimal(processed.get('kdv_tutari', 0)) 
             birim = processed.get('birim', 'TL')
             
-            logging.debug(f"\n   🧾 FATURA İŞLEME BAŞLADI (KDV DAHİL SİSTEM - DECIMAL)")
+            logging.debug(f"\n   🧾 FATURA İŞLEME BAŞLADI (MATRAH SİSTEMİ - DECIMAL)")
             logging.debug(f"   📋 Giriş Verileri:")
-            logging.debug(f"     - Girilen Tutar (KDV DAHİL): {toplam_tutar} {birim}")
+            logging.debug(f"     - Girilen Matrah: {toplam_tutar} {birim}")
             logging.debug(f"     - KDV Yüzdesi: {kdv_yuzdesi}%")
             
             # KDV yüzdesi kontrolü
@@ -269,23 +269,29 @@ class InvoiceProcessor:
                         else:
                             conversion_rate = Decimal(str(eur_to_tl))
                     
-                    # Girilen tutar olduğu gibi kalacak (toplam tutar)
-                    toplam_tutar_tl_decimal = toplam_tutar * conversion_rate
+                    # Girilen tutarı TL'ye çevir ve MATRAH olarak kaydet
+                    matrah_tl_decimal = toplam_tutar * conversion_rate
+
+                    # KDV tutarını matrah üzerinden hesapla
+                    # Örnek: Matrah 100 TL, KDV %20 → KDV = 100 × 0.20 = 20 TL
+                    kdv_tutari_tl = matrah_tl_decimal * (kdv_yuzdesi / Decimal('100'))
                     
-                    # KDV tutarını girilen tutar üzerinden hesapla (KDV = Tutar * KDV%)
-                    # 100 TL girildi → KDV = 100 × 0.20 = 20 TL
-                    kdv_tutari_tl = toplam_tutar_tl_decimal * (kdv_yuzdesi / Decimal('100'))
+                    # Toplam tutarı hesapla (Matrah + KDV)
+                    # Örnek: 100 + 20 = 120 TL
+                    toplam_tutar_tl_decimal = matrah_tl_decimal + kdv_tutari_tl
                     
                     # 5 ondalık basamağa yuvarla
                     toplam_tutar_tl_decimal = toplam_tutar_tl_decimal.quantize(Decimal('0.00001'))
                     kdv_tutari_tl = kdv_tutari_tl.quantize(Decimal('0.00001'))
+                    matrah_tl_decimal = matrah_tl_decimal.quantize(Decimal('0.00001'))
                     
-                    logging.debug(f"   ✅ KDV HESAPLAMA:")
-                    logging.debug(f"     - Girilen Tutar: {toplam_tutar} {birim}")
+                    logging.debug(f"   ✅ KDV HESAPLAMA (MATRAH ESASLI):")
+                    logging.debug(f"     - Girilen Matrah: {toplam_tutar} {birim}")
                     logging.debug(f"     - Kur: {conversion_rate}")
-                    logging.debug(f"     - Toplam Tutar (TL): {toplam_tutar_tl_decimal} TL")
+                    logging.debug(f"     - Matrah (TL): {matrah_tl_decimal} TL")
                     logging.debug(f"     - KDV Oranı: %{kdv_yuzdesi}")
                     logging.debug(f"     - KDV Tutarı (TL): {kdv_tutari_tl} TL")
+                    logging.debug(f"     - Genel Toplam (TL): {toplam_tutar_tl_decimal} TL")
                     
                 except Exception as calc_err:
                     logging.error(f"   ❌ Hesaplama hatası (Decimal): {calc_err}")
@@ -315,15 +321,24 @@ class InvoiceProcessor:
             else:
                 processed['toplam_tutar_eur'] = 0
             
+            # Orijinal para birimindeki toplam tutarı da güncelle (Matrah -> Toplam)
+            if birim == 'TL':
+                processed['toplam_tutar'] = processed['toplam_tutar_tl']
+            elif birim == 'USD':
+                processed['toplam_tutar'] = processed['toplam_tutar_usd']
+            elif birim == 'EUR':
+                processed['toplam_tutar'] = processed['toplam_tutar_eur']
+            
             processed['birim'] = birim 
             processed['kdv_yuzdesi'] = round(float(kdv_yuzdesi), 5)
             processed['kdv_dahil'] = 1  # Her zaman KDV dahil
             processed['kdv_tutari'] = round(float(kdv_tutari_tl), 5)
             processed['usd_rate'] = round(float(usd_to_tl), 5)
             processed['eur_rate'] = round(float(eur_to_tl), 5)
+            processed['matrah'] = round(float(matrah_tl_decimal), 5)
             
             logging.debug(f"   📊 SONUÇ (TL CİNSİNDEN):")
-            logging.debug(f"     - Matrah: {matrah_tl:.2f} TL")
+            logging.debug(f"     - Matrah: {matrah_tl_decimal:.2f} TL")
             logging.debug(f"     - KDV Tutarı: {kdv_tutari_tl:.2f} TL") 
             logging.debug(f"     - TOPLAM (KDV DAHİL): {toplam_kdv_dahil_tl:.2f} TL")
             logging.debug(f"   ✅ İşlem başarılı!\n")
@@ -529,12 +544,15 @@ class InvoiceManager:
             if not details:
                 firma = None
                 amount = None
+                birim = 'TL'
                 invoice_date = None
                 
                 if invoice_data:
                     invoice_date = invoice_data.get('tarih')
                     firma = invoice_data.get('firma') or invoice_data.get('tur')
-                    amount = invoice_data.get('toplam_tutar_tl') or invoice_data.get('miktar')
+                    # MATRAH (KDV hariç) kullan
+                    amount = invoice_data.get('matrah') or invoice_data.get('toplam_tutar_tl') or invoice_data.get('miktar')
+                    birim = invoice_data.get('birim', 'TL')
                 
                 if operation_type == 'EKLEME':
                     details = f"{invoice_type.title()} fatura eklendi"
@@ -549,7 +567,7 @@ class InvoiceManager:
                 if firma:
                     details += f" - Firma: {firma}"
                 if amount:
-                    details += f" - Tutar: {amount} TL"
+                    details += f" - Tutar: {amount}|{birim}"  # Birim bilgisi eklendi
                 if invoice_date:
                     details += f" - Tarih: {invoice_date}"
             

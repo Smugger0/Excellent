@@ -9,7 +9,8 @@ use tokio::runtime::Runtime;
 use chrono::{Utc, NaiveDate};
 use std::str::FromStr;
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
+use std::env;
 
 // ============================================================================
 // YARDIMCI FONKSİYONLAR
@@ -60,18 +61,33 @@ impl Database {
     // ------------------------------------------------------------------------
 
     fn init_connections(&self) -> PyResult<()> {
-        // Database klasörünün var olduğundan emin ol
-        if !Path::new("Database").exists() {
-            fs::create_dir("Database").map_err(|e| PyRuntimeError::new_err(format!("Failed to create Database directory: {}", e)))?;
+        // Database klasörünü Python çalışma dizininde oluştur
+        // Eğer PythonFiles içinden çalıştırılıyorsa bir üst dizine bak
+        let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        
+        let db_path = if cwd.ends_with("PythonFiles") {
+            cwd.parent().unwrap_or(&cwd).join("Database")
+        } else {
+            cwd.join("Database")
+        };
+        
+        if !db_path.exists() {
+            fs::create_dir(&db_path).map_err(|e| PyRuntimeError::new_err(format!("Failed to create Database directory: {}", e)))?;
         }
 
         let invoices_pool = self.invoices_pool.clone();
         let settings_pool = self.settings_pool.clone();
         let history_pool = self.history_pool.clone();
+        
+        // Veritabanı dosya yollarını oluştur
+        let invoices_db_path = db_path.join("invoices.db");
+        let settings_db_path = db_path.join("settings.db");
+        let history_db_path = db_path.join("history.db");
 
         self.runtime.block_on(async move {
             // Faturalar Veritabanı (Faturalar ve Genel Giderler)
-            let opts = SqliteConnectOptions::from_str("sqlite:Database/invoices.db?mode=rwc")
+            let connection_string = format!("sqlite:{}?mode=rwc", invoices_db_path.display());
+            let opts = SqliteConnectOptions::from_str(&connection_string)
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse connection string: {}", e)))?
                 .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
             
@@ -82,7 +98,8 @@ impl Database {
             *invoices_pool.write().await = Some(pool);
 
             // Ayarlar Veritabanı (Ayarlar ve Döviz Kurları)
-            let opts = SqliteConnectOptions::from_str("sqlite:Database/settings.db?mode=rwc")
+            let connection_string = format!("sqlite:{}?mode=rwc", settings_db_path.display());
+            let opts = SqliteConnectOptions::from_str(&connection_string)
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse connection string: {}", e)))?
                 .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
 
@@ -93,7 +110,8 @@ impl Database {
             *settings_pool.write().await = Some(pool);
 
             // Geçmiş Veritabanı (İşlem Geçmişi)
-            let opts = SqliteConnectOptions::from_str("sqlite:Database/history.db?mode=rwc")
+            let connection_string = format!("sqlite:{}?mode=rwc", history_db_path.display());
+            let opts = SqliteConnectOptions::from_str(&connection_string)
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse connection string: {}", e)))?
                 .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
 
@@ -126,6 +144,7 @@ impl Database {
                         firma TEXT,
                         malzeme TEXT,
                         miktar TEXT,
+                        matrah REAL DEFAULT 0.0,
                         toplam_tutar_tl REAL,
                         toplam_tutar_usd REAL,
                         toplam_tutar_eur REAL,
@@ -144,6 +163,9 @@ impl Database {
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to create income_invoices table: {}", e)))?;
 
+                // Migration for matrah column
+                let _ = sqlx::query("ALTER TABLE income_invoices ADD COLUMN matrah REAL DEFAULT 0.0").execute(pool).await;
+
                 // Gider Faturaları
                 sqlx::query(
                     r#"
@@ -155,6 +177,7 @@ impl Database {
                         firma TEXT,
                         malzeme TEXT,
                         miktar TEXT,
+                        matrah REAL DEFAULT 0.0,
                         toplam_tutar_tl REAL,
                         toplam_tutar_usd REAL,
                         toplam_tutar_eur REAL,
@@ -172,6 +195,9 @@ impl Database {
                 .execute(pool)
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to create expense_invoices table: {}", e)))?;
+
+                // Migration for matrah column
+                let _ = sqlx::query("ALTER TABLE expense_invoices ADD COLUMN matrah REAL DEFAULT 0.0").execute(pool).await;
 
                 // Genel Giderler
                 sqlx::query(
@@ -288,6 +314,7 @@ impl Database {
         let firma: Option<String> = data.get_item("firma")?.and_then(|v| v.extract().ok());
         let malzeme: Option<String> = data.get_item("malzeme")?.and_then(|v| v.extract().ok());
         let miktar: Option<String> = data.get_item("miktar")?.and_then(|v| v.extract().ok());
+        let matrah: Option<f64> = data.get_item("matrah")?.and_then(|v| v.extract().ok());
         let toplam_tutar_tl: Option<f64> = data.get_item("toplam_tutar_tl")?.and_then(|v| v.extract().ok());
         let toplam_tutar_usd: Option<f64> = data.get_item("toplam_tutar_usd")?.and_then(|v| v.extract().ok());
         let toplam_tutar_eur: Option<f64> = data.get_item("toplam_tutar_eur")?.and_then(|v| v.extract().ok());
@@ -304,10 +331,10 @@ impl Database {
                 
                 let result = sqlx::query(
                     r#"
-                    INSERT INTO income_invoices (fatura_no, tarih, firma, malzeme, miktar, toplam_tutar_tl, 
+                    INSERT INTO income_invoices (fatura_no, tarih, firma, malzeme, miktar, matrah, toplam_tutar_tl, 
                                         toplam_tutar_usd, toplam_tutar_eur, birim, kdv_yuzdesi, kdv_tutari, 
                                         kdv_dahil, usd_rate, eur_rate, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     "#
                 )
                 .bind(fatura_no)
@@ -315,6 +342,7 @@ impl Database {
                 .bind(firma)
                 .bind(malzeme)
                 .bind(miktar)
+                .bind(matrah)
                 .bind(toplam_tutar_tl)
                 .bind(toplam_tutar_usd)
                 .bind(toplam_tutar_eur)
@@ -345,6 +373,7 @@ impl Database {
         let firma: Option<String> = data.get_item("firma")?.and_then(|v| v.extract().ok());
         let malzeme: Option<String> = data.get_item("malzeme")?.and_then(|v| v.extract().ok());
         let miktar: Option<String> = data.get_item("miktar")?.and_then(|v| v.extract().ok());
+        let matrah: Option<f64> = data.get_item("matrah")?.and_then(|v| v.extract().ok());
         let toplam_tutar_tl: Option<f64> = data.get_item("toplam_tutar_tl")?.and_then(|v| v.extract().ok());
         let toplam_tutar_usd: Option<f64> = data.get_item("toplam_tutar_usd")?.and_then(|v| v.extract().ok());
         let toplam_tutar_eur: Option<f64> = data.get_item("toplam_tutar_eur")?.and_then(|v| v.extract().ok());
@@ -362,7 +391,7 @@ impl Database {
                 let result = sqlx::query(
                     r#"
                     UPDATE income_invoices SET
-                    tarih = ?, firma = ?, malzeme = ?, miktar = ?, 
+                    tarih = ?, firma = ?, malzeme = ?, miktar = ?, matrah = ?,
                     toplam_tutar_tl = ?, toplam_tutar_usd = ?, toplam_tutar_eur = ?, birim = ?, 
                     kdv_yuzdesi = ?, kdv_tutari = ?, kdv_dahil = ?, usd_rate = ?, eur_rate = ?, updated_at = ?
                     WHERE id = ?
@@ -372,6 +401,7 @@ impl Database {
                 .bind(firma)
                 .bind(malzeme)
                 .bind(miktar)
+                .bind(matrah)
                 .bind(toplam_tutar_tl)
                 .bind(toplam_tutar_usd)
                 .bind(toplam_tutar_eur)
@@ -440,7 +470,8 @@ impl Database {
         })
     }
 
-    fn get_all_gelir_invoices(&self, py: Python<'_>, limit: Option<i64>, offset: Option<i64>, order_by: Option<String>) -> PyResult<PyObject> {
+    #[pyo3(signature = (limit=None, offset=None, order_by=None))]
+    fn get_all_gelir_invoices(&self, py: Python<'_>, limit: Option<i64>, offset: Option<i64>, order_by: Option<String>) -> PyResult<Py<PyAny>> {
         let invoices_pool = self.invoices_pool.clone();
         
         let rows = self.runtime.block_on(async move {
@@ -464,9 +495,9 @@ impl Database {
             }
         })?;
 
-        let result = PyList::empty_bound(py);
+        let result = PyList::empty(py);
         for row in rows {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("id", row.get::<i64, _>("id"))?;
             dict.set_item("fatura_no", row.try_get::<String, _>("fatura_no").ok())?;
             
@@ -478,6 +509,7 @@ impl Database {
             dict.set_item("firma", row.try_get::<String, _>("firma").ok())?;
             dict.set_item("malzeme", row.try_get::<String, _>("malzeme").ok())?;
             dict.set_item("miktar", row.try_get::<String, _>("miktar").ok())?;
+            dict.set_item("matrah", row.try_get::<f64, _>("matrah").ok())?;
             dict.set_item("toplam_tutar_tl", row.try_get::<f64, _>("toplam_tutar_tl").ok())?;
             dict.set_item("toplam_tutar_usd", row.try_get::<f64, _>("toplam_tutar_usd").ok())?;
             dict.set_item("toplam_tutar_eur", row.try_get::<f64, _>("toplam_tutar_eur").ok())?;
@@ -511,7 +543,7 @@ impl Database {
         })
     }
 
-    fn get_gelir_invoice_by_id(&self, py: Python<'_>, invoice_id: i64) -> PyResult<PyObject> {
+    fn get_gelir_invoice_by_id(&self, py: Python<'_>, invoice_id: i64) -> PyResult<Py<PyAny>> {
         let invoices_pool = self.invoices_pool.clone();
         
         let row = self.runtime.block_on(async move {
@@ -527,7 +559,7 @@ impl Database {
         })?;
 
         if let Some(r) = row {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("id", r.get::<i64, _>("id"))?;
             dict.set_item("fatura_no", r.try_get::<String, _>("fatura_no").ok())?;
             
@@ -538,6 +570,7 @@ impl Database {
             dict.set_item("firma", r.try_get::<String, _>("firma").ok())?;
             dict.set_item("malzeme", r.try_get::<String, _>("malzeme").ok())?;
             dict.set_item("miktar", r.try_get::<String, _>("miktar").ok())?;
+            dict.set_item("matrah", r.try_get::<f64, _>("matrah").ok())?;
             dict.set_item("toplam_tutar_tl", r.try_get::<f64, _>("toplam_tutar_tl").ok())?;
             dict.set_item("toplam_tutar_usd", r.try_get::<f64, _>("toplam_tutar_usd").ok())?;
             dict.set_item("toplam_tutar_eur", r.try_get::<f64, _>("toplam_tutar_eur").ok())?;
@@ -569,6 +602,7 @@ impl Database {
         let firma: Option<String> = data.get_item("firma")?.and_then(|v| v.extract().ok());
         let malzeme: Option<String> = data.get_item("malzeme")?.and_then(|v| v.extract().ok());
         let miktar: Option<String> = data.get_item("miktar")?.and_then(|v| v.extract().ok());
+        let matrah: Option<f64> = data.get_item("matrah")?.and_then(|v| v.extract().ok());
         let toplam_tutar_tl: Option<f64> = data.get_item("toplam_tutar_tl")?.and_then(|v| v.extract().ok());
         let toplam_tutar_usd: Option<f64> = data.get_item("toplam_tutar_usd")?.and_then(|v| v.extract().ok());
         let toplam_tutar_eur: Option<f64> = data.get_item("toplam_tutar_eur")?.and_then(|v| v.extract().ok());
@@ -585,10 +619,10 @@ impl Database {
                 
                 let result = sqlx::query(
                     r#"
-                    INSERT INTO expense_invoices (fatura_no, tarih, firma, malzeme, miktar, toplam_tutar_tl, 
+                    INSERT INTO expense_invoices (fatura_no, tarih, firma, malzeme, miktar, matrah, toplam_tutar_tl, 
                                         toplam_tutar_usd, toplam_tutar_eur, birim, kdv_yuzdesi, kdv_tutari, 
                                         kdv_dahil, usd_rate, eur_rate, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     "#
                 )
                 .bind(fatura_no)
@@ -596,6 +630,7 @@ impl Database {
                 .bind(firma)
                 .bind(malzeme)
                 .bind(miktar)
+                .bind(matrah)
                 .bind(toplam_tutar_tl)
                 .bind(toplam_tutar_usd)
                 .bind(toplam_tutar_eur)
@@ -627,6 +662,7 @@ impl Database {
         let firma: Option<String> = data.get_item("firma")?.and_then(|v| v.extract().ok());
         let malzeme: Option<String> = data.get_item("malzeme")?.and_then(|v| v.extract().ok());
         let miktar: Option<String> = data.get_item("miktar")?.and_then(|v| v.extract().ok());
+        let matrah: Option<f64> = data.get_item("matrah")?.and_then(|v| v.extract().ok());
         let toplam_tutar_tl: Option<f64> = data.get_item("toplam_tutar_tl")?.and_then(|v| v.extract().ok());
         let toplam_tutar_usd: Option<f64> = data.get_item("toplam_tutar_usd")?.and_then(|v| v.extract().ok());
         let toplam_tutar_eur: Option<f64> = data.get_item("toplam_tutar_eur")?.and_then(|v| v.extract().ok());
@@ -644,7 +680,7 @@ impl Database {
                 let result = sqlx::query(
                     r#"
                     UPDATE expense_invoices SET
-                    fatura_no = ?, tarih = ?, firma = ?, malzeme = ?, miktar = ?, 
+                    fatura_no = ?, tarih = ?, firma = ?, malzeme = ?, miktar = ?, matrah = ?,
                     toplam_tutar_tl = ?, toplam_tutar_usd = ?, toplam_tutar_eur = ?, birim = ?, 
                     kdv_yuzdesi = ?, kdv_tutari = ?, kdv_dahil = ?, usd_rate = ?, eur_rate = ?, updated_at = ?
                     WHERE id = ?
@@ -655,6 +691,7 @@ impl Database {
                 .bind(firma)
                 .bind(malzeme)
                 .bind(miktar)
+                .bind(matrah)
                 .bind(toplam_tutar_tl)
                 .bind(toplam_tutar_usd)
                 .bind(toplam_tutar_eur)
@@ -723,7 +760,8 @@ impl Database {
         })
     }
 
-    fn get_all_gider_invoices(&self, py: Python<'_>, limit: Option<i64>, offset: Option<i64>, order_by: Option<String>) -> PyResult<PyObject> {
+    #[pyo3(signature = (limit=None, offset=None, order_by=None))]
+    fn get_all_gider_invoices(&self, py: Python<'_>, limit: Option<i64>, offset: Option<i64>, order_by: Option<String>) -> PyResult<Py<PyAny>> {
         let invoices_pool = self.invoices_pool.clone();
         
         let rows = self.runtime.block_on(async move {
@@ -747,9 +785,9 @@ impl Database {
             }
         })?;
 
-        let result = PyList::empty_bound(py);
+        let result = PyList::empty(py);
         for row in rows {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("id", row.get::<i64, _>("id"))?;
             dict.set_item("fatura_no", row.try_get::<String, _>("fatura_no").ok())?;
             
@@ -760,6 +798,7 @@ impl Database {
             dict.set_item("firma", row.try_get::<String, _>("firma").ok())?;
             dict.set_item("malzeme", row.try_get::<String, _>("malzeme").ok())?;
             dict.set_item("miktar", row.try_get::<String, _>("miktar").ok())?;
+            dict.set_item("matrah", row.try_get::<f64, _>("matrah").ok())?;
             dict.set_item("toplam_tutar_tl", row.try_get::<f64, _>("toplam_tutar_tl").ok())?;
             dict.set_item("toplam_tutar_usd", row.try_get::<f64, _>("toplam_tutar_usd").ok())?;
             dict.set_item("toplam_tutar_eur", row.try_get::<f64, _>("toplam_tutar_eur").ok())?;
@@ -793,7 +832,7 @@ impl Database {
         })
     }
 
-    fn get_gider_invoice_by_id(&self, py: Python<'_>, invoice_id: i64) -> PyResult<PyObject> {
+    fn get_gider_invoice_by_id(&self, py: Python<'_>, invoice_id: i64) -> PyResult<Py<PyAny>> {
         let invoices_pool = self.invoices_pool.clone();
         
         let row = self.runtime.block_on(async move {
@@ -809,7 +848,7 @@ impl Database {
         })?;
 
         if let Some(r) = row {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("id", r.get::<i64, _>("id"))?;
             dict.set_item("fatura_no", r.try_get::<String, _>("fatura_no").ok())?;
             
@@ -820,6 +859,7 @@ impl Database {
             dict.set_item("firma", r.try_get::<String, _>("firma").ok())?;
             dict.set_item("malzeme", r.try_get::<String, _>("malzeme").ok())?;
             dict.set_item("miktar", r.try_get::<String, _>("miktar").ok())?;
+            dict.set_item("matrah", r.try_get::<f64, _>("matrah").ok())?;
             dict.set_item("toplam_tutar_tl", r.try_get::<f64, _>("toplam_tutar_tl").ok())?;
             dict.set_item("toplam_tutar_usd", r.try_get::<f64, _>("toplam_tutar_usd").ok())?;
             dict.set_item("toplam_tutar_eur", r.try_get::<f64, _>("toplam_tutar_eur").ok())?;
@@ -883,7 +923,7 @@ impl Database {
         })
     }
 
-    fn get_all_settings(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_all_settings(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let settings_pool = self.settings_pool.clone();
         
         let rows = self.runtime.block_on(async move {
@@ -897,7 +937,7 @@ impl Database {
             }
         })?;
 
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         for row in rows {
             let key = row.get::<String, _>("key");
             let value = row.get::<String, _>("value");
@@ -990,7 +1030,7 @@ impl Database {
         })
     }
 
-    fn get_recent_history(&self, py: Python<'_>, limit: i64) -> PyResult<PyObject> {
+    fn get_recent_history(&self, py: Python<'_>, limit: i64) -> PyResult<Py<PyAny>> {
         let history_pool = self.history_pool.clone();
         
         let rows = self.runtime.block_on(async move {
@@ -1005,9 +1045,9 @@ impl Database {
             }
         })?;
 
-        let result = PyList::empty_bound(py);
+        let result = PyList::empty(py);
         for row in rows {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("id", row.get::<i64, _>("id"))?;
             dict.set_item("action", row.get::<String, _>("action"))?;
             dict.set_item("details", row.get::<String, _>("details"))?;
@@ -1017,7 +1057,7 @@ impl Database {
         Ok(result.into())
     }
 
-    fn get_history_by_date_range(&self, py: Python<'_>, start_date: String, end_date: String) -> PyResult<PyObject> {
+    fn get_history_by_date_range(&self, py: Python<'_>, start_date: String, end_date: String) -> PyResult<Py<PyAny>> {
         let history_pool = self.history_pool.clone();
         
         let rows = self.runtime.block_on(async move {
@@ -1035,9 +1075,9 @@ impl Database {
             }
         })?;
 
-        let result = PyList::empty_bound(py);
+        let result = PyList::empty(py);
         for row in rows {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("id", row.get::<i64, _>("id"))?;
             dict.set_item("action", row.get::<String, _>("action"))?;
             dict.set_item("details", row.get::<String, _>("details"))?;
@@ -1155,7 +1195,7 @@ impl Database {
         })
     }
 
-    fn get_yearly_expenses(&self, py: Python<'_>, year: i64) -> PyResult<PyObject> {
+    fn get_yearly_expenses(&self, py: Python<'_>, year: i64) -> PyResult<Py<PyAny>> {
         let invoices_pool = self.invoices_pool.clone();
         
         let row = self.runtime.block_on(async move {
@@ -1171,7 +1211,7 @@ impl Database {
         })?;
 
         if let Some(r) = row {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("id", r.get::<i64, _>("id"))?;
             dict.set_item("yil", r.get::<i64, _>("yil"))?;
             dict.set_item("ocak", r.get::<f64, _>("ocak"))?;
@@ -1192,7 +1232,7 @@ impl Database {
         }
     }
 
-    fn get_yearly_expenses_by_id(&self, py: Python<'_>, id: i64) -> PyResult<PyObject> {
+    fn get_yearly_expenses_by_id(&self, py: Python<'_>, id: i64) -> PyResult<Py<PyAny>> {
         let invoices_pool = self.invoices_pool.clone();
         
         let row = self.runtime.block_on(async move {
@@ -1208,7 +1248,7 @@ impl Database {
         })?;
 
         if let Some(r) = row {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("id", r.get::<i64, _>("id"))?;
             dict.set_item("yil", r.get::<i64, _>("yil"))?;
             dict.set_item("ocak", r.get::<f64, _>("ocak"))?;
@@ -1246,7 +1286,7 @@ impl Database {
         })
     }
 
-    fn get_all_yearly_expenses(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_all_yearly_expenses(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let invoices_pool = self.invoices_pool.clone();
         
         let rows = self.runtime.block_on(async move {
@@ -1260,9 +1300,9 @@ impl Database {
             }
         })?;
 
-        let result = PyList::empty_bound(py);
+        let result = PyList::empty(py);
         for row in rows {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("id", row.get::<i64, _>("id"))?;
             dict.set_item("yil", row.get::<i64, _>("yil"))?;
             dict.set_item("ocak", row.get::<f64, _>("ocak"))?;
@@ -1370,7 +1410,7 @@ impl Database {
         })
     }
 
-    fn get_corporate_tax(&self, py: Python<'_>, year: i64) -> PyResult<PyObject> {
+    fn get_corporate_tax(&self, py: Python<'_>, year: i64) -> PyResult<Py<PyAny>> {
         let invoices_pool = self.invoices_pool.clone();
         
         let row = self.runtime.block_on(async move {
@@ -1386,7 +1426,7 @@ impl Database {
         })?;
 
         if let Some(r) = row {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             dict.set_item("id", r.get::<i64, _>("id"))?;
             dict.set_item("yil", r.get::<i64, _>("yil"))?;
             dict.set_item("ocak", r.get::<f64, _>("ocak"))?;

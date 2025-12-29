@@ -1,13 +1,13 @@
 [package]
-name = "rust_qr_backend"  # Python'da import ederken kullanacağın isim
+name = "rust_qr"  # Python'da import ederken kullanacağın isim
 version = "1.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
-name = "rust_qr_backend"
+name = "rust_qr"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3 = { version = "0.27", features = ["extension-module"] }
 rxing = "0.5"      # QR okuma
-image = "0.24"     # Resim işleme
+image = "0.25"     # Resim işleme

@@ -4,16 +4,11 @@
 # Proje genelinde kullanılan kütüphaneler
 from imports import *
 
+# Define project root
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 # Rust tabanlı veritabanı modülü (Yüksek performanslı SQLite işlemleri için)
-try:
-    import rust_db
-except ImportError:
-    import sys
-    # Kaynak koddan çalıştırılıyorsa veya modül adı farklıysa yedek yükleme denemesi
-    try:
-        from rust_db import rust_db
-    except ImportError:
-        pass
+import rust_db
 
 # İş mantığı modülleri
 from invoices import InvoiceProcessor, InvoiceManager, PeriodicIncomeCalculator
@@ -58,14 +53,7 @@ class Backend:
         self.on_status_updated = None
         
         # Rust veritabanı başlatma
-        try:
-            self.db = rust_db.Database()
-        except AttributeError:
-            if hasattr(rust_db, 'rust_db') and hasattr(rust_db.rust_db, 'Database'):
-                self.db = rust_db.rust_db.Database()
-            else:
-                raise ImportError("Rust veritabanı modülü yüklenemedi!")
-
+        self.db = rust_db.Database()
         self.db.init_connections()
         self.db.create_tables()
         
@@ -602,7 +590,8 @@ class Backend:
         # 1. Önce veritabanından (cache) kontrol et
         try:
             # rust_db WAL modunda olduğu için okuma çakışması olmaz
-            conn = sqlite3.connect('Database/settings.db')
+            db_path = os.path.join(PROJECT_ROOT, 'Database', 'settings.db')
+            conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             
             for date_str in unique_dates:
@@ -641,7 +630,8 @@ class Backend:
                         dt = datetime.strptime(date_str, "%d.%m.%Y")
                         db_date = dt.strftime("%Y-%m-%d")
                         
-                        # Her thread kendi bağlantısını açmalı
+                        db_path = os.path.join(PROJECT_ROOT, 'Database', 'settings.db')
+                        t_conn = sqlite3.connect(db_path)
                         t_conn = sqlite3.connect('Database/settings.db')
                         t_cursor = t_conn.cursor()
                         t_cursor.execute(

@@ -1,6 +1,7 @@
 /rust_qr/target
 Database/
 *.db
+/target
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

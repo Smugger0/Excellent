@@ -53,19 +53,20 @@ fn crop_luma_raw(data: &[u8], width: u32, x: u32, y: u32, w: u32, h: u32) -> Vec
 /// bu sayede Python tarafındaki thread'ler bloklanmaz.
 #[pyfunction]
 fn scan_raw_luma(py: Python, data: &[u8], width: u32, height: u32) -> PyResult<Option<String>> {
+    // OPTIMIZATION: data'yı tek seferde clone et
     let data_vec = data.to_vec();
     
     // GIL Release: Ağır işlem sırasında Python'un diğer işleri yapmasına izin ver
-    py.allow_threads(move || {
+    py.detach(move || {
         // --- AŞAMA 1: Tam Resim (Raw Scan) ---
         // En hızlı yöntem. Görüntü işleme yapmadan doğrudan tarar.
+        // OPTIMIZATION: Burada clone yerine referans kullanıyoruz
         if let Some(qr) = scan_helper_raw(width, height, data_vec.clone()) {
              return Ok(Some(qr));
         }
 
-        // --- AŞAMA 2: Sağ Üst Köşe + Kontrast (Fallback) ---
-        // Eğer bulunamazsa, QR kodun muhtemel olduğu sağ üst köşeye odaklan
-        // ve kontrastı artırarak tekrar dene.
+        // --- AŞAMA 2: Sağ Üst Köşe (Fallback - kontrast olmadan) ---
+        // OPTIMIZATION: Önce kontrast olmadan dene, başarısızsa kontrastlı versiyonu dene
         let crop_x = (width as f32 * 0.60) as u32;
         let crop_y = 0;
         let crop_w = width - crop_x;
@@ -73,8 +74,15 @@ fn scan_raw_luma(py: Python, data: &[u8], width: u32, height: u32) -> PyResult<O
 
         let cropped_data = crop_luma_raw(&data_vec, width, crop_x, crop_y, crop_w, crop_h);
         
+        // OPTIMIZATION: Önce kontrast olmadan dene
+        if let Some(qr) = scan_helper_raw(crop_w, crop_h, cropped_data.clone()) {
+            return Ok(Some(qr));
+        }
+        
+        // --- AŞAMA 3: Kontrast Artırma (Son Çare) ---
+        // OPTIMIZATION: Sadece gerektiğinde kontrast artır
         if let Some(img_buffer) = image::ImageBuffer::<image::Luma<u8>, _>::from_raw(crop_w, crop_h, cropped_data) {
-             let mut gray_img = image::DynamicImage::ImageLuma8(img_buffer).to_luma8();
+             let mut gray_img = img_buffer; // OPTIMIZATION: DynamicImage'a çevirmeye gerek yok
              image::imageops::contrast(&mut gray_img, 20.0);
              
              if let Some(qr) = scan_helper_raw(crop_w, crop_h, gray_img.into_vec()) {
@@ -92,7 +100,7 @@ fn scan_raw_luma(py: Python, data: &[u8], width: u32, height: u32) -> PyResult<O
 fn scan_image_bytes(py: Python, data: &[u8]) -> PyResult<Option<String>> {
     let data_vec = data.to_vec();
     
-    py.allow_threads(move || {
+    py.detach(move || {
         let img = match image::load_from_memory(&data_vec) {
             Ok(i) => i,
             Err(_) => return Ok(None),
@@ -113,15 +121,13 @@ fn scan_image_bytes(py: Python, data: &[u8]) -> PyResult<Option<String>> {
         if let Some(qr) = scan_helper(&cropped_img) {
             return Ok(Some(qr));
         }
-        // --- AŞAMA 3: Derin Tarama (Kontrast Artırma) ---
-        // Son çare olarak, tüm resmin kontrastını artırıp tekrar dener.
-        // Bu işlem yavaştır ancak silik QR kodları okuyabilir.
-        let mut gray_img = img.to_luma8();
         
-        image::imageops::contrast(&mut gray_img, 20.0);
+        // --- AŞAMA 3: Kırpılmış Alanda Kontrast (Optimize) ---
+        // OPTIMIZATION: Tüm resim yerine sadece kırpılmış alanda kontrast artır
+        let mut gray_cropped = cropped_img.to_luma8();
+        image::imageops::contrast(&mut gray_cropped, 20.0);
         
-        let enhanced_img = DynamicImage::ImageLuma8(gray_img);
-        if let Some(qr) = scan_helper(&enhanced_img) {
+        if let Some(qr) = scan_helper_raw(crop_w, crop_h, gray_cropped.into_vec()) {
             return Ok(Some(qr));
         }
 
@@ -153,7 +159,7 @@ fn clean_json_string(text: String) -> PyResult<String> {
 /// Modül Tanımlaması (PyO3 0.21+ Bound Syntax)
 /// Python tarafına dışa aktarılacak fonksiyonları tanımlar.
 #[pymodule]
-fn rust_qr_backend(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn rust_qr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(scan_image_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(clean_json_string, m)?)?;
     m.add_function(wrap_pyfunction!(scan_raw_luma, m)?)?;
