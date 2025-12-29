@@ -7,5 +7,5 @@ pyzbar
 pymupdf
 reportlab
 XlsxWriter
-pywin32
+pywin32; sys_platform == 'win32'
 Pillow

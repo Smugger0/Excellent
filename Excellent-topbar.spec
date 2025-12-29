@@ -16,8 +16,7 @@ block_cipher = None
 datas = [
     ('fonts', 'fonts'), 
     ('app_icon.ico', '.'), 
-    ('logo.png', '.'), 
-    ('Database', 'Database')
+    ('logo.png', '.')
 ]
 
 # --- WINDOWS DLL AYARLARI ---
